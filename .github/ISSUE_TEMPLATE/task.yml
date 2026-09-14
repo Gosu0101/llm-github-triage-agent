@@ -1,5 +1,5 @@
 name: 작업
-about: 개발·조사·평가 작업을 등록합니다.
+description: 개발·조사·평가 작업을 등록합니다.
 title: "[area] 작업 내용"
 labels: []
 body:
