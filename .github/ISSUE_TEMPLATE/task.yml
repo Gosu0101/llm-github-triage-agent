@@ -1,0 +1,51 @@
+name: 작업
+about: 개발·조사·평가 작업을 등록합니다.
+title: "[area] 작업 내용"
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        작업을 시작하기 전에 목적, 담당, 기한, 완료 기준을 작성합니다.
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 목적
+      description: 왜 필요한 작업인지 작성하세요.
+    validations:
+      required: true
+  - type: textarea
+    id: work
+    attributes:
+      label: 작업 내용
+      description: 수행할 항목을 구체적으로 작성하세요.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: 완료 기준
+      description: 확인 가능한 체크리스트로 작성하세요.
+      placeholder: |
+        - [ ] 결과물 생성
+        - [ ] 실행/검증 결과 기록
+        - [ ] 관련 문서 갱신
+    validations:
+      required: true
+  - type: input
+    id: due
+    attributes:
+      label: 목표 완료일
+      placeholder: YYYY-MM-DD
+    validations:
+      required: true
+  - type: input
+    id: session
+    attributes:
+      label: 관련 차시
+      placeholder: 예) 2차시
+  - type: textarea
+    id: resources
+    attributes:
+      label: 관련 자료
+      description: Notion 문서, 관련 Issue/PR, 참고 자료 등을 기록하세요.
