@@ -1,5 +1,5 @@
 name: 버그 제보
-about: 프로젝트 코드·동작의 버그를 기록합니다.
+description: 프로젝트 코드·동작의 버그를 기록합니다.
 title: "[bug] "
 labels: []
 body:
