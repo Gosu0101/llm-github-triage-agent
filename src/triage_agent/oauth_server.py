@@ -188,6 +188,7 @@ def create_handler(settings: OAuthSettings) -> type[BaseHTTPRequestHandler]:
                     "issue_count": metadata["issue_count"],
                     "pull_request_count": metadata["pull_request_count"],
                     "pages_requested": metadata["pages_requested"],
+                    "per_page": metadata["per_page"],
                     "output_file": str(output_path),
                     "message": "OAuth verified, token saved locally, and collection completed.",
                 },

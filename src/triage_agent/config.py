@@ -9,6 +9,12 @@ import tempfile
 from urllib.parse import urlparse
 
 
+# Windows에는 os.fchmod가 없고 POSIX의 0600 권한 비트도 동일하게 적용되지
+# 않는다. Windows에서는 파일이 위치한 폴더의 NTFS ACL을 따르게 하고,
+# macOS/Linux에서만 소유자 전용 권한을 명시적으로 설정한다.
+_IS_WINDOWS = os.name == "nt"
+
+
 def load_env_file(path: str | Path = ".env") -> None:
     """간단한 ``KEY=VALUE`` 형식의 파일을 환경변수로 불러온다.
 
@@ -37,12 +43,13 @@ def load_env_file(path: str | Path = ".env") -> None:
 
 
 def save_env_value(key: str, value: str, path: str | Path = ".env") -> None:
-    """민감한 값을 `.env`에 원자적으로 저장하고 파일 권한을 0600으로 제한한다.
+    """민감한 값을 `.env`에 원자적으로 저장하고 접근 권한을 제한한다.
 
     기존 키가 있으면 값을 교체하고, 없으면 마지막에 추가한다. 임시 파일에
     완성본을 쓴 뒤 ``os.replace``하므로 쓰기 도중 프로세스가 중단돼도 기존
     `.env`가 반쯤 써진 상태로 남을 가능성을 줄인다. 값은 반환하거나 출력하지
-    않는다.
+    않는다. macOS/Linux에서는 권한을 0600으로 지정하며 Windows에서는
+    ``os.fchmod`` 대신 해당 폴더의 NTFS ACL을 따른다.
     """
 
     if not key or "=" in key or "\n" in key:
@@ -68,11 +75,13 @@ def save_env_value(key: str, value: str, path: str | Path = ".env") -> None:
         prefix=f".{env_path.name}.", dir=env_path.parent, text=True
     )
     try:
-        os.fchmod(file_descriptor, 0o600)
+        if not _IS_WINDOWS:
+            os.fchmod(file_descriptor, 0o600)
         with os.fdopen(file_descriptor, "w", encoding="utf-8") as temporary_file:
             temporary_file.write("\n".join(updated_lines) + "\n")
         os.replace(temporary_name, env_path)
-        os.chmod(env_path, 0o600)
+        if not _IS_WINDOWS:
+            os.chmod(env_path, 0o600)
     except Exception:
         try:
             os.close(file_descriptor)

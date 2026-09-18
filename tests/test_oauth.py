@@ -95,45 +95,101 @@ class OAuthTests(unittest.TestCase):
             self.assertIn("GITHUB_CLIENT_ID=id", contents)
             self.assertIn("GITHUB_TOKEN=new-token", contents)
             self.assertNotIn("GITHUB_TOKEN=old", contents)
-            self.assertEqual(env_file.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(env_file.stat().st_mode & 0o777, 0o600)
+
+    def test_env_save_does_not_call_fchmod_on_windows(self) -> None:
+        """Windows 환경에서는 존재하지 않는 os.fchmod를 호출하지 않는다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            with (
+                patch("triage_agent.config._IS_WINDOWS", True),
+                patch.object(
+                    os, "fchmod", side_effect=AssertionError("fchmod called"), create=True
+                ),
+            ):
+                save_env_value("GITHUB_TOKEN", "token", env_file)
+            self.assertEqual(env_file.read_text(encoding="utf-8"), "GITHUB_TOKEN=token\n")
 
     def test_collection_separates_issues_and_requests_two_pages(self) -> None:
-        """Issues 응답의 PR을 제외하고 두 페이지를 실제 요청하는지 확인한다."""
+        """두 페이지의 서로 다른 항목을 중복·누락 없이 합치는지 확인한다."""
 
         class FakeClient:
             def __init__(self) -> None:
-                self.issue_pages: list[int] = []
-                self.pull_pages: list[int] = []
+                self.issue_requests: list[tuple[int, int]] = []
+                self.pull_requests: list[tuple[int, int]] = []
+                self.detail_numbers: list[int] = []
 
             def list_issues(self, owner, repo, *, page, per_page):
-                self.issue_pages.append(page)
-                return GitHubResponse(
-                    [
-                        {"number": page, "title": f"Issue {page}", "labels": []},
-                        {"number": 100 + page, "pull_request": {"url": "example"}},
+                self.issue_requests.append((page, per_page))
+                items = {
+                    1: [
+                        {"id": 1, "number": 1, "title": "Issue 1", "labels": []},
+                        {"id": 2, "number": 2, "title": "Issue 2", "labels": []},
                     ],
+                    2: [
+                        # 페이지 경계가 변해 같은 항목이 다시 와도 한 번만 저장한다.
+                        {"id": 2, "number": 2, "title": "Issue 2", "labels": []},
+                        {"id": 3, "number": 3, "title": "Issue 3", "labels": []},
+                        {"id": 103, "number": 103, "pull_request": {"url": "example"}},
+                    ],
+                }
+                return GitHubResponse(
+                    items[page],
                     {"remaining": "4999"},
                 )
 
             def list_pull_requests(self, owner, repo, *, page, per_page, state="all"):
-                self.pull_pages.append(page)
+                self.pull_requests.append((page, per_page))
+                items = {
+                    1: [
+                        {"id": 10, "number": 10, "title": "PR 10", "user": {}, "base": {}, "head": {}}
+                    ],
+                    2: [
+                        {"id": 10, "number": 10, "title": "PR 10", "user": {}, "base": {}, "head": {}},
+                        {"id": 11, "number": 11, "title": "PR 11", "user": {}, "base": {}, "head": {}},
+                    ],
+                }
                 return GitHubResponse(
-                    [{"number": page, "title": f"PR {page}", "user": {}, "base": {}, "head": {}}],
+                    items[page],
                     {"remaining": "4998"},
                 )
 
             def get_pull_request(self, owner, repo, number):
+                self.detail_numbers.append(number)
                 return GitHubResponse({"changed_files": 1}, {"remaining": "4997"})
 
             def list_pull_request_files(self, owner, repo, number):
                 return GitHubResponse([{"filename": "example.py", "patch": "+pass"}], {"remaining": "4996"})
 
         client = FakeClient()
-        result = collect_repository(client, "owner/repo", issue_limit=10, pull_request_limit=2, pages=2)
-        self.assertEqual(client.issue_pages, [1, 2])
-        self.assertEqual(client.pull_pages, [1, 2])
-        self.assertEqual([item["number"] for item in result["issues"]], [1, 2])
-        self.assertEqual(len(result["pull_requests"]), 2)
+        result = collect_repository(
+            client,
+            "owner/repo",
+            issue_limit=10,
+            pull_request_limit=2,
+            pages=2,
+            per_page=2,
+        )
+        self.assertEqual(client.issue_requests, [(1, 2), (2, 2)])
+        self.assertEqual(client.pull_requests, [(1, 2), (2, 2)])
+        self.assertEqual([item["number"] for item in result["issues"]], [1, 2, 3])
+        self.assertEqual([item["number"] for item in result["pull_requests"]], [10, 11])
+        self.assertEqual(client.detail_numbers, [10, 11])
+        self.assertEqual(result["metadata"]["per_page"], 2)
+
+    def test_collection_pagination_is_validated_before_request(self) -> None:
+        """잘못된 페이지 설정은 GitHub 요청 전에 거부한다."""
+
+        class NoRequestClient:
+            def list_issues(self, *args, **kwargs):
+                raise AssertionError("network request should not be made")
+
+        with self.assertRaisesRegex(ValueError, "per_page"):
+            collect_repository(NoRequestClient(), "owner/repo", per_page=0)
+        with self.assertRaisesRegex(ValueError, "pages"):
+            collect_repository(NoRequestClient(), "owner/repo", pages=0)
 
     def test_collection_json_does_not_contain_token(self) -> None:
         """저장 JSON에 인증 Token이 들어가지 않고 권한이 0600인지 확인한다."""
@@ -141,7 +197,23 @@ class OAuthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = save_collection({"metadata": {}, "issues": [], "pull_requests": []}, directory)
             self.assertNotIn("token", output.read_text(encoding="utf-8").lower())
-            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+
+    def test_collection_save_does_not_call_fchmod_on_windows(self) -> None:
+        """Windows 환경에서도 수집 JSON을 os.fchmod 오류 없이 저장한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("triage_agent.collector._IS_WINDOWS", True),
+                patch.object(
+                    os, "fchmod", side_effect=AssertionError("fchmod called"), create=True
+                ),
+            ):
+                output = save_collection(
+                    {"metadata": {}, "issues": [], "pull_requests": []}, directory
+                )
+            self.assertTrue(output.exists())
 
 
 if __name__ == "__main__":

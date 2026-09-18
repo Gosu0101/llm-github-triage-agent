@@ -44,7 +44,7 @@ callback 처리 후에는 주소창에 일회용 `code`와 `state`가 남지 않
 - 조회한 Issue·PR 수와 확인한 페이지 수
 - Token이 포함되지 않은 JSON 저장 경로
 
-Access Token은 `.env`의 `GITHUB_TOKEN`에만 저장하며 파일 권한을 소유자만 읽고 쓸 수 있는 `0600`으로 제한한다. Token은 브라우저 응답, 터미널 로그, 수집 JSON에 출력하지 않는다. 수집 결과도 `0600` JSON으로 저장한다. 인증과 수집이 성공하면 서버가 자동 종료되며, 진행 중 서버가 재시작되면 기존 `state`는 폐기된다.
+Access Token은 `.env`의 `GITHUB_TOKEN`에만 저장한다. macOS/Linux에서는 파일 권한을 소유자만 읽고 쓸 수 있는 `0600`으로 제한하고, Windows에서는 POSIX 전용 `os.fchmod()`를 호출하지 않고 저장 폴더의 NTFS ACL을 따른다. Token은 브라우저 응답, 터미널 로그, 수집 JSON에 출력하지 않는다. 수집 결과에도 같은 운영체제별 권한 정책을 적용한다. 인증과 수집이 성공하면 서버가 자동 종료되며, 진행 중 서버가 재시작되면 기존 `state`는 폐기된다.
 
 처음 OAuth를 완료한 뒤에는 callback 서버 없이 저장된 Token으로 다시 수집할 수 있다.
 
@@ -60,7 +60,7 @@ PYTHONPATH=src python3 -m triage_agent.collect_saved
 - PKCE: `S256` 방식의 `code_challenge`와 `code_verifier`를 사용한다.
 - 만료: callback 대기 상태는 10분 후 폐기한다.
 - 로그: callback query string을 기록하지 않아 임시 `code`와 `state`가 노출되지 않는다.
-- Token: Git에서 제외된 `.env`에만 원자적으로 저장하고 파일 권한을 `0600`으로 제한한다.
+- Token: Git에서 제외된 `.env`에만 원자적으로 저장한다. macOS/Linux에서는 `0600`, Windows에서는 저장 폴더의 NTFS ACL을 적용한다.
 - 수집 JSON: Token·Secret 없이 Issue·PR 공개 필드와 Rate Limit만 저장한다.
 - 오류: GitHub 오류 응답에서 Secret과 Token이 포함될 수 있는 원문을 그대로 출력하지 않는다.
 - 종료: 인증과 수집이 완료되면 localhost callback 서버를 자동 종료한다.
@@ -71,11 +71,12 @@ PYTHONPATH=src python3 -m triage_agent.collect_saved
 
 ```python
 client = GitHubClient(access_token)
-issues = client.list_issues("OWNER", "REPO", page=1, per_page=10)
-pulls = client.list_pull_requests("OWNER", "REPO", page=1, per_page=2)
+for page in (1, 2):
+    issues = client.list_issues("OWNER", "REPO", page=page, per_page=5)
+    pulls = client.list_pull_requests("OWNER", "REPO", page=page, per_page=5)
 ```
 
-각 응답에는 JSON 데이터와 Rate Limit 메타데이터가 함께 들어 있다. `collect_repository()`는 Issues API 결과 중 `pull_request` 키가 있는 항목을 제외하고, PR은 Pulls API에서 상세 정보와 변경 파일을 조회한다. 기본값으로 Issue·PR endpoint를 각각 2페이지 확인하고 일반 Issue 최대 10건, PR 최대 2건을 저장한다.
+각 응답에는 JSON 데이터와 Rate Limit 메타데이터가 함께 들어 있다. `collect_repository()`는 Issues API 결과 중 `pull_request` 키가 있는 항목을 제외하고, PR은 Pulls API에서 상세 정보와 변경 파일을 조회한다. 기본값으로 `per_page=5`를 사용해 Issue·PR endpoint를 각각 2페이지 요청하고 일반 Issue 최대 10건, PR 최대 2건을 저장한다. 페이지 사이에서 같은 ID 또는 번호가 다시 반환되면 한 번만 저장하며, 저장 JSON의 `metadata.per_page`와 `metadata.pages_requested`로 실제 요청 조건을 확인할 수 있다.
 
 ## 검증
 

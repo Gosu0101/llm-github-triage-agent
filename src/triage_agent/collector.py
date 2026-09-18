@@ -12,6 +12,11 @@ from typing import Any
 from .github import GitHubClient
 
 
+# Windows에는 POSIX 전용 os.fchmod가 없다. Windows 저장 파일은 NTFS ACL을
+# 따르고, macOS/Linux에서만 소유자 전용 0600 권한을 명시적으로 적용한다.
+_IS_WINDOWS = os.name == "nt"
+
+
 def _labels(item: dict[str, Any]) -> list[str]:
     """GitHub label 객체 목록에서 label 이름만 추출한다."""
 
@@ -90,34 +95,65 @@ def collect_repository(
     issue_limit: int = 10,
     pull_request_limit: int = 2,
     pages: int = 2,
+    per_page: int = 5,
 ) -> dict[str, Any]:
-    """두 페이지 이상 조회해 일반 Issue와 PR을 분리하고 정규화한다.
+    """여러 페이지를 조회해 일반 Issue와 PR을 분리하고 정규화한다.
 
     Issues endpoint는 PR도 섞어 반환하므로 ``pull_request`` 키가 없는 항목만
     일반 Issue로 취급한다. PR은 Pulls endpoint에서 다시 조회한 뒤 상세 정보와
-    변경 파일을 추가한다.
+    변경 파일을 추가한다. 작은 ``per_page`` 기본값으로 실제 데이터가 여러
+    페이지에 나뉘게 하고, 페이지 사이에 같은 항목이 나타나도 ID 또는 번호를
+    기준으로 한 번만 저장한다.
     """
+
+    if pages < 1:
+        raise ValueError("pages must be at least 1")
+    if not 1 <= per_page <= 100:
+        raise ValueError("per_page must be between 1 and 100")
+    if issue_limit < 0 or pull_request_limit < 0:
+        raise ValueError("collection limits must not be negative")
 
     owner, repo = repository.split("/", 1)
     issues: list[dict[str, Any]] = []
     pull_request_items: list[dict[str, Any]] = []
+    seen_issue_keys: set[tuple[str, str]] = set()
+    seen_pull_request_keys: set[tuple[str, str]] = set()
     rate_limits: dict[str, dict[str, str | None]] = {}
 
     for page in range(1, pages + 1):
-        response = client.list_issues(owner, repo, page=page, per_page=30)
+        response = client.list_issues(owner, repo, page=page, per_page=per_page)
         rate_limits["issues"] = response.rate_limit
         for item in response.data if isinstance(response.data, list) else []:
             if not isinstance(item, dict):
                 continue
             if "pull_request" in item:
                 continue
-            if len(issues) < issue_limit:
+            # GitHub 응답에는 id와 number가 있지만, 테스트 대역처럼 id가 없는
+            # 경우에도 number로 페이지 간 중복을 판별한다.
+            key_name = "id" if item.get("id") is not None else "number"
+            key_value = item.get(key_name)
+            if key_value is None:
+                continue
+            item_key = (key_name, str(key_value))
+            if item_key not in seen_issue_keys and len(issues) < issue_limit:
+                seen_issue_keys.add(item_key)
                 issues.append(_normalize_issue(item))
 
-        response = client.list_pull_requests(owner, repo, page=page, per_page=30)
+        response = client.list_pull_requests(owner, repo, page=page, per_page=per_page)
         rate_limits["pull_requests"] = response.rate_limit
         for item in response.data if isinstance(response.data, list) else []:
-            if isinstance(item, dict) and len(pull_request_items) < pull_request_limit:
+            if not isinstance(item, dict):
+                continue
+            key_name = "id" if item.get("id") is not None else "number"
+            key_value = item.get(key_name)
+            if key_value is None:
+                continue
+            item_key = (key_name, str(key_value))
+            if (
+                item_key not in seen_pull_request_keys
+                and len(pull_request_items) < pull_request_limit
+            ):
+                seen_pull_request_keys.add(item_key)
                 pull_request_items.append(item)
 
     pull_requests: list[dict[str, Any]] = []
@@ -137,6 +173,7 @@ def collect_repository(
             "repository": repository,
             "collected_at": datetime.now(timezone.utc).isoformat(),
             "pages_requested": pages,
+            "per_page": per_page,
             "issue_count": len(issues),
             "pull_request_count": len(pull_requests),
             "rate_limits": rate_limits,
@@ -147,7 +184,11 @@ def collect_repository(
 
 
 def save_collection(payload: dict[str, Any], output_dir: str | Path) -> Path:
-    """수집 결과를 Token 없이 timestamp가 붙은 권한 0600 JSON으로 저장한다."""
+    """수집 결과를 Token 없이 timestamp가 붙은 비공개 JSON으로 저장한다.
+
+    macOS/Linux에서는 파일 권한을 0600으로 제한하며 Windows에서는 저장
+    폴더의 NTFS ACL을 따른다.
+    """
 
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -157,12 +198,14 @@ def save_collection(payload: dict[str, Any], output_dir: str | Path) -> Path:
         prefix=".collection-", suffix=".json", dir=directory, text=True
     )
     try:
-        os.fchmod(file_descriptor, 0o600)
+        if not _IS_WINDOWS:
+            os.fchmod(file_descriptor, 0o600)
         with os.fdopen(file_descriptor, "w", encoding="utf-8") as temporary_file:
             json.dump(payload, temporary_file, ensure_ascii=False, indent=2)
             temporary_file.write("\n")
         os.replace(temporary_name, destination)
-        os.chmod(destination, 0o600)
+        if not _IS_WINDOWS:
+            os.chmod(destination, 0o600)
     except Exception:
         try:
             os.close(file_descriptor)

@@ -26,6 +26,7 @@ def main() -> None:
         f"issues={metadata['issue_count']}, "
         f"pull_requests={metadata['pull_request_count']}, "
         f"pages={metadata['pages_requested']}, "
+        f"per_page={metadata['per_page']}, "
         f"output={output_path}"
     )
 
