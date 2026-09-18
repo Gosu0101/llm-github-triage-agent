@@ -20,3 +20,6 @@ Thumbs.db
 # Logs / temp
 *.log
 temp/
+
+# Local OAuth collection results
+data/oauth/
