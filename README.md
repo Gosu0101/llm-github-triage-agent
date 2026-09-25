@@ -38,6 +38,22 @@ GitHub에 새 Issue 또는 Pull Request가 등록되면 다음 기능을 수행�
 
 프로젝트 협업 환경을 초기 구성하는 단계입니다. 구현되지 않은 기능은 완료 기능으로 간주하지 않습니다.
 
+## OAuth 로컬 검증
+
+외부 웹 프레임워크 없이 Python 3.11 이상의 표준 라이브러리로 GitHub OAuth 인증을 확인할 수 있습니다.
+
+```bash
+PYTHONPATH=src python3 -m triage_agent.oauth_server
+```
+
+실행하면 기본 브라우저에서 OAuth 승인을 시작합니다. 예시 callback은 `http://127.0.0.1:8080/callback`이며, OAuth App 설정과 `.env`의 `GITHUB_REDIRECT_URI`가 정확히 같아야 합니다. 승인 후 Token은 Git에서 제외된 로컬 `.env`에 저장되고, 지정 저장소의 Issue·PR 수집 결과는 `data/oauth/`에 저장됩니다. 자세한 설정·검증 방법은 [`docs/oauth.md`](docs/oauth.md)를 참고합니다.
+
+최초 승인 이후에는 callback 서버 없이 저장된 Token으로 다시 수집할 수 있습니다.
+
+```bash
+PYTHONPATH=src python3 -m triage_agent.collect_saved
+```
+
 ## 보안
 
 토큰, API Key, Client Secret 등 실제 인증정보는 저장소에 커밋하지 않습니다. 로컬에서는 환경변수 또는 `.env`를 사용하고, 공개 가능한 변수 이름만 `.env.example`에 기록합니다.
