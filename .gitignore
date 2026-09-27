@@ -23,3 +23,6 @@ temp/
 
 # Local OAuth collection results
 data/oauth/
+
+# Local LLM call results
+data/llm/
