@@ -218,3 +218,147 @@ def save_collection(payload: dict[str, Any], output_dir: str | Path) -> Path:
         Path(temporary_name).unlink(missing_ok=True)
         raise
     return destination
+
+
+# 저장소별 라벨 매핑을 코드로 정의
+CLASSIFICATION_LABELS = {
+    "microsoft/vscode": {
+        "bug": ["bug"],
+        "feature-request": ["feature-request"],
+        "question": ["*question"],
+    },
+    "kubernetes/kubernetes": {
+        "bug": ["kind/bug"],
+        "feature-request": ["kind/feature"],
+        "question": ["kind/support"],
+    },
+    "scikit-learn/scikit-learn": {
+        "bug": ["Bug"],
+        "feature-request": ["New Feature", "Enhancement"],
+        "question": ["Question"],
+    },
+}
+
+
+# 분류용 Issue 전용 수집 함수
+def collect_classification_issues(
+    client: GitHubClient,
+    repository: str,
+    *,
+    per_type: int = 10,
+    pages: int = 5,
+    per_page: int = 30,
+) -> dict[str, Any]:
+
+    if repository not in CLASSIFICATION_LABELS:
+        raise ValueError(
+            f"Unsupported benchmark repository: {repository}"
+        )
+
+    owner, repo = repository.split("/", 1)
+
+    label_map = CLASSIFICATION_LABELS[repository]
+
+    issues: list[dict[str, Any]] = []
+    seen_issue_ids: set[int] = set()
+
+    counts = {
+        "bug": 0,
+        "feature-request": 0,
+        "question": 0,
+    }
+
+    rate_limits = {}
+
+    for target_type, source_labels in label_map.items():
+
+        for source_label in source_labels:
+
+            if counts[target_type] >= per_type:
+                break
+
+            for page in range(1, pages + 1):
+
+                if counts[target_type] >= per_type:
+                    break
+
+                response = client.list_issues(
+                    owner,
+                    repo,
+                    page=page,
+                    per_page=per_page,
+                    labels=source_label,
+                )
+
+                rate_limits[source_label] = response.rate_limit
+
+                data = (
+                    response.data
+                    if isinstance(response.data, list)
+                    else []
+                )
+
+                for item in data:
+
+                    if not isinstance(item, dict):
+                        continue
+
+                    # Issues API에는 PR도 섞일 수 있으므로 제외
+                    if "pull_request" in item:
+                        continue
+
+                    issue_id = item.get("id")
+
+                    if not isinstance(issue_id, int):
+                        continue
+
+                    if issue_id in seen_issue_ids:
+                        continue
+
+                    original_labels = _labels(item)
+
+                    # 해당 Issue에 붙은 라벨들이
+                    # 서로 다른 공통 유형으로 충돌하는지 확인
+                    mapped_types: set[str] = set()
+
+                    for common_type, repo_labels in label_map.items():
+                        if any(
+                            label in repo_labels
+                            for label in original_labels
+                        ):
+                            mapped_types.add(common_type)
+
+                    # Bug + Enhancement 같은 충돌 사례 제외
+                    if len(mapped_types) != 1:
+                        continue
+
+                    if target_type not in mapped_types:
+                        continue
+
+                    normalized = _normalize_issue(item, repository)
+
+                    # 네 로컬 collector에 이미 있다면
+                    # 기존 구현을 그대로 사용하면 됨
+                    normalized["repository"] = repository
+                    normalized["is_pull_request"] = False
+                    normalized["original_labels"] = original_labels
+
+                    issues.append(normalized)
+                    seen_issue_ids.add(issue_id)
+
+                    counts[target_type] += 1
+
+                    if counts[target_type] >= per_type:
+                        break
+
+    return {
+        "metadata": {
+            "repository": repository,
+            "collected_at": datetime.now(timezone.utc).isoformat(),
+            "purpose": "classification-dev-candidates",
+            "per_type_target": per_type,
+            "counts": counts,
+            "rate_limits": rate_limits,
+        },
+        "issues": issues,
+    }

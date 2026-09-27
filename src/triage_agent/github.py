@@ -160,28 +160,36 @@ class GitHubClient:
 
         return self.get("/user")
 
-    def list_issues(
-        self,
-        owner: str,
-        repo: str,
-        *,
-        page: int = 1,
-        per_page: int = 30,
-        state: str = "all",
-    ) -> GitHubResponse:
-        """저장소의 Issue 목록을 페이지 단위로 조회한다.
 
-        GitHub Issues API에는 PR도 포함되므로 반환 항목에 ``pull_request``
-        키가 있는지는 #4 수집 단계에서 반드시 확인해야 한다.
-        """
+    def list_issues(
+            self,
+            owner: str,
+            repo: str,
+            *,
+            page: int = 1,
+            per_page: int = 30,
+            state: str = "all",
+            labels: str | None = None,
+    ) -> GitHubResponse:
+        """저장소의 Issue 목록을 페이지 단위로 조회한다."""
 
         if not 1 <= per_page <= 100:
             raise ValueError("per_page must be between 1 and 100")
         if page < 1:
             raise ValueError("page must be at least 1")
+
+        params: dict[str, str | int] = {
+            "state": state,
+            "page": page,
+            "per_page": per_page,
+        }
+
+        if labels:
+            params["labels"] = labels
+
         return self.get(
             f"/repos/{owner}/{repo}/issues",
-            params={"state": state, "page": page, "per_page": per_page},
+            params=params,
         )
 
     def list_pull_requests(
