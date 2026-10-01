@@ -27,7 +27,7 @@ def _labels(item: dict[str, Any]) -> list[str]:
     ]
 
 
-def _normalize_issue(item: dict[str, Any]) -> dict[str, Any]:
+def _normalize_issue(item: dict[str, Any], repository: str) -> dict[str, Any]:
     """중복 탐지와 평가에 필요한 공개 Issue 필드만 선택한다."""
 
     return {
@@ -35,6 +35,10 @@ def _normalize_issue(item: dict[str, Any]) -> dict[str, Any]:
         "number": item.get("number"),
         "title": item.get("title"),
         "body": item.get("body"),
+        "repository": repository,
+        "is_pull_request": False,
+        "original_labels": _labels(item),
+        # Keep the legacy name while downstream consumers migrate.
         "labels": _labels(item),
         "state": item.get("state"),
         "created_at": item.get("created_at"),
@@ -137,7 +141,7 @@ def collect_repository(
             item_key = (key_name, str(key_value))
             if item_key not in seen_issue_keys and len(issues) < issue_limit:
                 seen_issue_keys.add(item_key)
-                issues.append(_normalize_issue(item))
+                issues.append(_normalize_issue(item, repository))
 
         response = client.list_pull_requests(owner, repo, page=page, per_page=per_page)
         rate_limits["pull_requests"] = response.rate_limit

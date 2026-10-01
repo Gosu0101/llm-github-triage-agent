@@ -17,4 +17,14 @@
 - 평가 데이터 및 지표 정의
 - GitHub Actions·Cache 설계
 
+작성된 문서:
+
+- [수집 데이터와 분류 입력](data-schema.md)
+- [2026-09-27 수집 결과 및 스키마 점검](collection-check-2026-09-27.md)
+
+
+- [Gemini 초기 호출·JSON 응답 연결 (#14)](gemini-call.md)
+
+- [LLM 후보·중복 Issue 탐지·PR 요약 초안](llm-candidates-and-io.md)
+
 회의록·학습 노트·수행일지·결과보고서 초안은 Notion에서 관리합니다.
