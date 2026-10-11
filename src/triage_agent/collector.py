@@ -249,10 +249,23 @@ def collect_classification_issues(
     pages: int = 5,
     per_page: int = 30,
 ) -> dict[str, Any]:
+    """원본 라벨과 평가용 공통 유형을 보존해 분류 후보를 수집한다.
+
+    ``per_type=0``이면 요청 없이 빈 결과를 반환한다. 이 경우에도 pagination
+    설정을 검증하며, ``mapped_label``은 평가용으로만 사용한다.
+    """
+
+    if pages < 1:
+        raise ValueError("pages must be at least 1")
+    if not 1 <= per_page <= 100:
+        raise ValueError("per_page must be between 1 and 100")
+    if per_type < 0:
+        raise ValueError("per_type must not be negative")
 
     if repository not in CLASSIFICATION_LABELS:
         raise ValueError(
-            f"Unsupported benchmark repository: {repository}"
+            f"Unsupported benchmark repository: {repository}. "
+            f"Supported repositories: {', '.join(CLASSIFICATION_LABELS)}"
         )
 
     owner, repo = repository.split("/", 1)
@@ -337,11 +350,7 @@ def collect_classification_issues(
 
                     normalized = _normalize_issue(item, repository)
 
-                    # 네 로컬 collector에 이미 있다면
-                    # 기존 구현을 그대로 사용하면 됨
-                    normalized["repository"] = repository
-                    normalized["is_pull_request"] = False
-                    normalized["original_labels"] = original_labels
+                    normalized["mapped_label"] = target_type
 
                     issues.append(normalized)
                     seen_issue_ids.add(issue_id)

@@ -48,7 +48,10 @@ PYTHONPATH=src python3 -m triage_agent.oauth_server
 
 실행하면 기본 브라우저에서 OAuth 승인을 시작합니다. 예시 callback은 `http://127.0.0.1:8080/callback`이며, OAuth App 설정과 `.env`의 `GITHUB_REDIRECT_URI`가 정확히 같아야 합니다. 승인 후 Token은 Git에서 제외된 로컬 `.env`에 저장되고, 지정 저장소의 Issue·PR 수집 결과는 `data/oauth/`에 저장됩니다. 자세한 설정·검증 방법은 [`docs/oauth.md`](docs/oauth.md)를 참고합니다.
 
-최초 승인 이후에는 callback 서버 없이 저장된 Token으로 다시 수집할 수 있습니다.
+최초 승인 이후에는 callback 서버 없이 저장된 Token으로 분류용 Issue를 수집할 수 있습니다.
+`.env`의 `GITHUB_REPOSITORY`를 `microsoft/vscode`, `kubernetes/kubernetes`,
+`scikit-learn/scikit-learn` 중 하나로 지정합니다. 결과는 `OAUTH_OUTPUT_DIR`
+(기본 `data/oauth`)에 저장하며, 각 Issue의 평가용 공통 유형은 `mapped_label`에 보존합니다.
 
 ```bash
 PYTHONPATH=src python3 -m triage_agent.collect_saved

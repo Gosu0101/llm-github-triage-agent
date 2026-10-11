@@ -592,8 +592,21 @@ patch가 잘렸거나 필요한 파일이 없으면 `insufficient_information=tr
 
 원본 라벨은 `original_labels`에 보존하고, 매핑·검토를 거쳐 확정한 공통 유형은
 `mapped_label`로 별도 관리한다. 두 필드는 평가용이며 모델 입력에서 제외한다.
-현재 수집 코드의 원본 라벨 필드명은 `labels`이며, 위 정책은 데이터 준비 단계에
-적용할 기준이다. 이 문서 수정으로 라벨 변환 기능이 구현된 것은 아니다.
+일반 Issue 정규화는 원본 라벨을 `original_labels`에 저장하고, 기존 소비 코드와의
+호환성을 위해 같은 값을 `labels`에도 저장한다. 분류용 수집 함수
+`collect_classification_issues()`는 충돌 없는 후보마다 `mapped_label`을 추가한다.
+`collect_repository()`의 일반 수집 결과에는 `mapped_label`을 자동으로 부여하지 않는다.
+
+분류용 저장 JSON은 `metadata`와 `issues`로 구성된다. 각 Issue의 `mapped_label`은
+`bug`, `feature-request`, `question` 중 하나이며, `metadata.counts`는 유형별 실제
+저장 건수다. PR, 중복 ID, 서로 다른 공통 유형이 충돌하는 Issue는 제외한다.
+페이지·수집 한도에 도달하면 목표보다 적은 후보를 반환할 수 있다.
+
+`collect_classification_issues()`의 기본값은 `per_type=10`, `pages=5`, `per_page=30`이다.
+`pages >= 1`, `1 <= per_page <= 100`, `per_type >= 0`을 요청 전에 검증한다.
+`per_type=0`은 요청 없이 빈 `issues`와 유형별 0건을 반환하며, 이 경우에도 다른
+인자 검증을 생략하지 않는다. 저장된 Token으로 실행하는 설정과 명령은
+[OAuth 문서](oauth.md#실행)를 참고한다.
 
 라벨이 없거나 위 매핑표에 없는 라벨만 있는 항목의 검토·제외 기준은 추가 합의가
 필요하다. 이런 항목을 임의로 `question` 등 특정 유형에 배정하지 않는다.

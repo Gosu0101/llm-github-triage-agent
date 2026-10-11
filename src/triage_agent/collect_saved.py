@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from .collector import collect_classification_issues, save_collection
 from .config import load_env_file
@@ -21,18 +22,21 @@ def main() -> None:
             "GITHUB_TOKEN is missing. Run the OAuth flow first."
         )
 
-    payload = collect_classification_issues(
-        GitHubClient(access_token),
-        "microsoft/vscode",
-        per_type=10,
-        pages=5,
-        per_page=30,
-    )
+    repository = os.getenv("GITHUB_REPOSITORY", "microsoft/vscode").strip()
+    output_dir = Path(os.getenv("OAUTH_OUTPUT_DIR", "data/oauth").strip() or "data/oauth")
 
-    output_path = save_collection(
-        payload,
-        r"C:\llm-github-triage-agent\data\oauth",
-    )
+    try:
+        payload = collect_classification_issues(
+            GitHubClient(access_token),
+            repository,
+            per_type=10,
+            pages=5,
+            per_page=30,
+        )
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+
+    output_path = save_collection(payload, output_dir)
 
     print(f"Collection completed: output={output_path}")
 
