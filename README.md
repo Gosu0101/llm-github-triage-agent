@@ -54,6 +54,10 @@ PYTHONPATH=src python3 -m triage_agent.oauth_server
 PYTHONPATH=src python3 -m triage_agent.collect_saved
 ```
 
+## 고정 dev 분류 실험
+
+Gemini와 LM Studio 실행기를 프로젝트 명령으로 사용할 수 있습니다. 기본 실행은 API 호출 없는 고정 묶음 검증입니다. 설치·실행·팀 인계는 [실행기 문서](docs/classification-review.md)를 참고합니다.
+
 ## 보안
 
 토큰, API Key, Client Secret 등 실제 인증정보는 저장소에 커밋하지 않습니다. 로컬에서는 환경변수 또는 `.env`를 사용하고, 공개 가능한 변수 이름만 `.env.example`에 기록합니다.

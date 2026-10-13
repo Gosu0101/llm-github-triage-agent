@@ -28,3 +28,5 @@
 - [LLM 후보·중복 Issue 탐지·PR 요약 초안](llm-candidates-and-io.md)
 
 회의록·학습 노트·수행일지·결과보고서 초안은 Notion에서 관리합니다.
+
+- [고정 dev 분류 실험 실행기](classification-review.md) — Gemini v1·LM Studio 로컬 v0/v1, 오프라인 검증·결과 보존.
