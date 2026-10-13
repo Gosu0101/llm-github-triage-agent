@@ -13,7 +13,7 @@ GitHub 라벨·댓글을 게시하는 도구가 아닙니다.
 python -m pip install -e .
 ```
 
-팀이 공유한 **기존 `stepup-v1-review` 폴더**를 `--bundle`로 지정합니다.
+고정 데이터 묶음은 기본적으로 프로젝트의 **`data/classification-review/`**에 둡니다. 현재 작업 PC에는 기존 `stepup-v1-review` 묶음의 필수 8개 파일을 해시 변경 없이 복사했습니다. 다른 PC에서도 팀이 공유한 동일 묶음을 이 위치에 준비해야 합니다. Git에서는 제외되므로 clone만으로 데이터가 전달되지는 않습니다. 다른 위치를 쓰려면 `--bundle`로 지정합니다.
 묶음에는 다음 파일이 필요합니다. 결과 ZIP만으로는 실행할 수 없습니다.
 
 - `preflight.json`
@@ -33,11 +33,11 @@ Git에서 제외한 `data/classification-review/`를 사용합니다. 팀원별 
 ## 1. 환경값 없이 먼저 검증
 
 ```powershell
-python -B -m triage_agent.classification_review --bundle 'C:\path\stepup-v1-review'
-python -B -m triage_agent.classification_review --bundle 'C:\path\stepup-v1-review' --provider local
+python -B -m triage_agent.classification_review
+python -B -m triage_agent.classification_review --provider local
 ```
 
-기본 모드는 API 요청 0회이며 `.env`를 읽지 않습니다. 파일 해시,
+프로젝트 루트에서 위 명령만 실행하면 기본 묶음을 읽습니다. 외부 묶음은 `--bundle '다른 폴더'`로 선택할 수 있습니다. 기본 모드는 API 요청 0회이며 `.env`를 읽지 않습니다. 파일 해시,
 항목 수·ID, title/body 전용 입력, 정답·기존 결과 연결을 검증합니다.
 잘림·정답 필드 포함·변조가 발견되면 실행 전에 거부합니다.
 
@@ -48,7 +48,7 @@ python -B -m triage_agent.classification_review --bundle 'C:\path\stepup-v1-revi
 환경파일보다 우선하며 키의 프로젝트 연결은 사용자가 확인해야 합니다.
 
 ```powershell
-python -B -m triage_agent.classification_review --bundle 'C:\path\stepup-v1-review' --execute --env-file .env
+python -B -m triage_agent.classification_review --execute --env-file .env
 ```
 
 - 기존 프로젝트 `GeminiClient`를 사용합니다. `--project` 인자는 필요하지 않습니다.
@@ -67,8 +67,8 @@ LM Studio에서 서버를 시작하고 정확한 모델 ID를 확인합니다. �
 컨텍스트는 서버의 로딩 설정이고 `--max-tokens`는 생성 한도입니다.
 
 ```powershell
-python -B -m triage_agent.classification_review --bundle 'C:\path\stepup-v1-review' --provider local --execute --smoke
-python -B -m triage_agent.classification_review --bundle 'C:\path\stepup-v1-review' --provider local --execute
+python -B -m triage_agent.classification_review --provider local --execute --smoke
+python -B -m triage_agent.classification_review --provider local --execute
 ```
 
 로컬 기본값: `http://127.0.0.1:1234/v1`, temperature 0, max_tokens 2048,

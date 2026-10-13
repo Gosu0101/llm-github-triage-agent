@@ -17,7 +17,8 @@ from . import review_bundle, review_local
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--bundle', type=Path, required=True, help='Unchanged shared stepup-v1-review data bundle')
+    parser.add_argument('--bundle', type=Path, default=Path('data/classification-review'),
+                        help='Frozen data bundle (default: data/classification-review under the current project directory)')
     parser.add_argument('--provider', choices=('gemini', 'local'), default='gemini')
     parser.add_argument('--execute', action='store_true', help='Explicitly enable model requests')
     parser.add_argument('--env-file', type=Path, help='Optional env file; Gemini execution only')
@@ -86,6 +87,9 @@ def main(argv=None):
         })
         print(json.dumps({'result_directory': str(output.resolve()), 'summary': str(output / 'summary.json')}))
         return 2 if any(record['status'] != 'success' for record in records) else 0
+    except FileNotFoundError as error:
+        print('Required file not found: ' + str(error.filename), file=sys.stderr)
+        return 2
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(str(error) if isinstance(error, ValueError) else 'Check bundle and output paths.', file=sys.stderr)
         return 2

@@ -142,6 +142,25 @@ class ClassificationReviewTests(unittest.TestCase):
         self.assertTrue(any(call.args[0]>0 for call in sleep.call_args_list))
         self.assertNotIn('test-key-only',''.join(p.read_text(encoding='utf-8-sig') for p in output.rglob('*') if p.is_file()))
 
+    def test_project_default_bundle_needs_no_path_flag_for_either_provider(self):
+        directory=self.root/'data'/'classification-review'
+        directory.mkdir(parents=True)
+        make_bundle(directory)
+        for provider in ['gemini','local']:
+            result=subprocess.run([sys.executable,'-B','-m','triage_agent.classification_review','--provider',provider],
+                                  cwd=self.root,capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(result.stdout)['network_calls'],0)
+            self.assertEqual(json.loads(result.stdout)['dev_items'],15)
+        self.assertFalse((self.root/'data'/'llm').exists())
+
+    def test_missing_bundle_names_required_file_without_network(self):
+        result=subprocess.run([sys.executable,'-B','-m','triage_agent.classification_review',
+                               '--bundle',str(self.root/'absent')],capture_output=True,text=True)
+        self.assertEqual(result.returncode,2)
+        self.assertIn('preflight.json',result.stderr)
+        self.assertNotIn('Traceback',result.stderr)
+
     def test_module_command_works_without_machine_specific_path(self):
         result=subprocess.run([sys.executable,'-B','-m','triage_agent.classification_review','--bundle',str(self.bundle)],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
