@@ -1,5 +1,6 @@
 import contextlib
 import hashlib
+from http.client import HTTPException, IncompleteRead
 import importlib.util
 import io
 import json
@@ -9,7 +10,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 
 def make_bundle(root):
@@ -116,6 +118,52 @@ class ClassificationReviewTests(unittest.TestCase):
         self.assertEqual(summary['calls'],1)
         self.assertEqual(summary['stopped']['status'],'incomplete_response')
         self.assertEqual(summary['phases']['v1']['dev']['unattempted'],15)
+
+    def test_local_transport_failures_are_saved_and_stop(self):
+        from triage_agent import review_local
+        cases = (
+            ('incomplete_read', 'read', lambda: IncompleteRead(b'partial-json', 10),
+             'network_error', None),
+            ('http_exception', 'read', lambda: HTTPException('Broken HTTP response'),
+             'network_error', None),
+            ('http_error', 'open', lambda: HTTPError(
+                'http://127.0.0.1:1234/v1/chat/completions', 429, 'Limited', {}, io.BytesIO()),
+             'api_error', 429),
+        )
+        for smoke in (False, True):
+            for name, stage, make_error, status, http_status in cases:
+                with self.subTest(smoke=smoke, error=name):
+                    output = self.root / f'{name}-{smoke}'
+                    response = MagicMock()
+                    response.__enter__.return_value = response
+                    opener = MagicMock()
+                    if stage == 'read':
+                        opener.open.return_value = response
+                        response.read.side_effect = make_error()
+                    else:
+                        opener.open.side_effect = make_error()
+                    options = ['--provider', 'local', '--execute', '--output', str(output)]
+                    if smoke:
+                        options.append('--smoke')
+                    with patch.object(review_local, 'build_opener', return_value=opener):
+                        code, out, err = self.call(*options)
+                    self.assertEqual(code, 2, err)
+                    phase = 'v1' if smoke else 'v0'
+                    record = json.loads((output / phase / '100.json').read_text())
+                    summary = json.loads((output / 'summary.json').read_text())
+                    self.assertEqual(record['status'], status)
+                    self.assertIsNone(record['prediction'])
+                    self.assertEqual(len(record['attempts']), 1)
+                    self.assertEqual(record['attempts'][0]['status'], status)
+                    self.assertEqual(record['attempts'][0]['http_status'], http_status)
+                    self.assertEqual(summary['calls'], 1)
+                    self.assertEqual(summary['stopped']['status'], status)
+                    self.assertEqual(summary['stopped']['http_status'], http_status)
+                    self.assertTrue((output / 'run-manifest.json').exists())
+                    self.assertEqual(len(list(output.rglob('*.json'))), 3)
+                    if not smoke:
+                        self.assertEqual(summary['phases']['v0']['dev']['unattempted'], 14)
+                        self.assertEqual(summary['phases']['v1']['dev']['unattempted'], 15)
 
     def test_gemini_pacing_keeps_retry_attempts_and_restores_transport(self):
         from triage_agent import gemini

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime, timezone
+from http.client import HTTPException
 import json
 from pathlib import Path
 import time
@@ -72,7 +73,7 @@ def request_json(url, payload, timeout):
         code = error.code
         error.close()
         raise LocalError('api_error', code) from None
-    except (URLError, TimeoutError, OSError):
+    except (URLError, TimeoutError, OSError, HTTPException):
         raise LocalError('network_error') from None
     if len(raw) > 2_000_000:
         raise LocalError('invalid_response')
