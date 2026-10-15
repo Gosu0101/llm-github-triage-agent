@@ -46,13 +46,39 @@ callback 처리 후에는 주소창에 일회용 `code`와 `state`가 남지 않
 
 Access Token은 `.env`의 `GITHUB_TOKEN`에만 저장한다. macOS/Linux에서는 파일 권한을 소유자만 읽고 쓸 수 있는 `0600`으로 제한하고, Windows에서는 POSIX 전용 `os.fchmod()`를 호출하지 않고 저장 폴더의 NTFS ACL을 따른다. Token은 브라우저 응답, 터미널 로그, 수집 JSON에 출력하지 않는다. 수집 결과에도 같은 운영체제별 권한 정책을 적용한다. 인증과 수집이 성공하면 서버가 자동 종료되며, 진행 중 서버가 재시작되면 기존 `state`는 폐기된다.
 
-처음 OAuth를 완료한 뒤에는 callback 서버 없이 저장된 Token으로 다시 수집할 수 있다.
+처음 OAuth를 완료한 뒤에는 callback 서버 없이 저장된 Token으로 분류용 Issue를
+수집할 수 있다. 이 명령에는 `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`,
+`GITHUB_REDIRECT_URI`가 필요하지 않으며, 기존 Token과 아래 수집 설정만 읽는다.
+
+```dotenv
+GITHUB_TOKEN=저장된_Token
+GITHUB_REPOSITORY=microsoft/vscode
+OAUTH_OUTPUT_DIR=data/oauth
+```
+
+지원 저장소는 `microsoft/vscode`, `kubernetes/kubernetes`,
+`scikit-learn/scikit-learn`이다. 설정을 생략하면 `microsoft/vscode`를 사용하고,
+지원하지 않는 저장소는 API 요청 전에 오류로 안내한다. 기존 `.env`가 개발 저장소를
+가리키고 있다면 위 벤치마크 중 하나로 변경해야 한다. OAuth callback의 일반
+Issue·PR 수집은 기존처럼 임의의 `OWNER/REPO`를 사용할 수 있다.
 
 ```bash
 PYTHONPATH=src python3 -m triage_agent.collect_saved
 ```
 
-이 명령도 Token은 출력하지 않고 조회 건수, 페이지 수, 새 JSON 경로만 출력한다. Token이 만료되거나 폐기되었다면 OAuth 흐름을 다시 실행한다.
+저장 위치는 `OAUTH_OUTPUT_DIR`를 사용한다. 생략하거나 빈 값이면 `data/oauth`를
+사용하며, 상대 경로는 명령을 실행한 현재 디렉터리를 기준으로 해석한다.
+운영체제에 맞는 절대 경로도 지정할 수 있다. 명령은 저장소 루트에서 실행한다.
+셸에 이미 설정된 환경변수가 `.env`보다 우선한다.
+
+유형별 최대 10건을 수집하며 각 원본 라벨당 최대 5페이지, 페이지당 30건을 조회한다.
+PR과 서로 다른 공통 유형이 충돌하는 Issue는 제외한다. 결과 JSON의 각 Issue에는
+`original_labels`와 `mapped_label`을 저장한다. 이 두 필드는 평가용이며 분류 모델에
+입력하지 않는다. 수집 한도 안에서 후보가 부족하면 `metadata.counts`는 목표보다
+작을 수 있다. 상세 계약은 [데이터 스키마의 라벨 정책](data-schema.md#7-라벨-정책)을 참고한다.
+
+이 명령은 Token을 출력하지 않고 새 JSON 경로만 출력한다.
+Token이 만료되거나 폐기되었다면 OAuth 흐름을 다시 실행한다.
 
 ## 보안 처리
 
