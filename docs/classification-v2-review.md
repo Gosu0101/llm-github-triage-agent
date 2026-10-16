@@ -6,6 +6,10 @@ v1 실행기·프롬프트·입력·정답·과거 결과는 바꾸지 않습니
 
 ## 묶음과 오프라인 검증
 
+보류·실패·재시도·입력 길이·생성 한도의 권장안은
+[실행 정책 합의 초안](classification-execution-policy-draft.md)에서 검토합니다.
+이 문서는 팀 미확정 제안이며 실행기 동작·기본값을 변경하지 않습니다.
+
 프로젝트 루트에서 `python -m pip install -e .`로 설치한 뒤 실행합니다.
 공유 v2 묶음의 파일을 `data/classification-review-v2/`에 준비합니다.
 다른 위치는 `--bundle`로 지정합니다. 데이터는 Git에서 제외되며 clone만으로
