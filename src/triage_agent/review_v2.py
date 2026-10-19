@@ -1,4 +1,4 @@
-"""Frozen v2 follow-up: 18 primary items, separate Gemini stability checks."""
+"""Frozen v2 follow-up: 18 primary items, separate boundary stability checks."""
 from __future__ import annotations
 
 import argparse
@@ -129,7 +129,8 @@ def main(argv=None):
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--env-file', type=Path)
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--boundary-repeats', type=int)
+    parser.add_argument('--boundary-repeats', type=int,
+                        help='Extra runs per boundary item: 0..3 (default: Gemini 3, local 0)')
     parser.add_argument('--interval', type=float, default=13)
     parser.add_argument('--model', default='supergemma4-26b-uncensored-v2')
     parser.add_argument('--base-url', default='http://127.0.0.1:1234/v1')
@@ -138,8 +139,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         repeats = args.boundary_repeats if args.boundary_repeats is not None else (3 if args.provider == 'gemini' else 0)
-        if not 0 <= repeats <= 3 or (args.provider == 'local' and repeats):
-            raise ValueError('Only Gemini supports 0..3 boundary repetitions')
+        if not 0 <= repeats <= 3:
+            raise ValueError('boundary-repeats must be 0..3')
         if not math.isfinite(args.interval) or not 0 <= args.interval <= 60:
             raise ValueError('interval must be 0..60')
         if not 128 <= args.max_tokens <= 8192 or not 1 <= args.timeout <= 1800:
