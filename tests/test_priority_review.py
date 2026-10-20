@@ -127,6 +127,26 @@ class PriorityReviewTests(unittest.TestCase):
                          ('validated', 2, 0))
         self.assertFalse((self.root/'results').exists())
 
+    def test_missing_data_reports_the_resolved_file_without_creating_output(self):
+        output = self.root/'must-not-exist'
+        for option, filename in (('--inputs', 'missing-inputs.json'),
+                                 ('--classifications', 'missing-results.jsonl'),
+                                 ('--mock-responses', 'missing-responses.json')):
+            missing = self.root/filename
+            args = ['--inputs', str(missing if option == '--inputs' else self.inputs)]
+            if option != '--inputs':
+                args += [option, str(missing)]
+            if option == '--mock-responses':
+                args += ['--classifications', str(self.classifications), '--output', str(output)]
+            with self.subTest(option=option), contextlib.redirect_stdout(io.StringIO()) as out, \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(self.module.main(args), 2)
+                self.assertIn(filename, err.getvalue())
+                self.assertIn('not found', err.getvalue().lower())
+                self.assertIn('git pull', err.getvalue())
+                self.assertEqual(out.getvalue(), '')
+                self.assertFalse(output.exists())
+
     def test_invalid_inputs_hashes_and_classifications_fail_preflight(self):
         original_rows = copy.deepcopy(self.rows)
         original_upstream = copy.deepcopy(self.upstream)

@@ -10,6 +10,19 @@
 
 공유된 `priority-preparation-inputs-20261020.json`을 사용합니다. 코드 저장소에는 실제 원문 묶음·사람 정답·과거 결과를 넣지 않습니다. 예를 들어 로컬 `data/llm/priority/inputs.json`에 보관할 수 있습니다. `data/llm/`는 Git에서 제외됩니다.
 
+**`git pull`이나 `pip install -e .`는 이 입력 파일을 만들지 않습니다.** 다른 PC에서는 파일도 별도로 옮겨야 합니다. 공유 파일은 Wiki의 `Wiki/문서/스텝업/첨부/priority-preparation-inputs-20261020.json`이며, 공유자에게 같은 이름의 파일을 받아도 됩니다. 파일 SHA-256은 `946211e7b8988155b320388f991fa279341f5c739a596e6d612e05c0f1573ac2`입니다.
+
+예를 들어 받은 파일을 Windows 다운로드 폴더에 저장한 뒤 **프로젝트 루트**에서 다음과 같이 준비합니다. 이미 다른 경로에 보관했다면 복사 대신 `--inputs`에 그 실제 경로를 직접 지정할 수 있습니다.
+
+```powershell
+New-Item -ItemType Directory -Force 'data/llm/priority' | Out-Null
+Copy-Item -LiteralPath "$env:USERPROFILE/Downloads/priority-preparation-inputs-20261020.json" -Destination 'data/llm/priority/inputs.json'
+Test-Path -LiteralPath 'data/llm/priority/inputs.json' -PathType Leaf
+python -B -m triage_agent.priority_review --inputs 'data/llm/priority/inputs.json'
+```
+
+`Test-Path`가 `True`여야 합니다. 입력·분류·모의 응답 파일이 없으면 실행기는 없는 파일의 절대 경로와 별도 복사 안내를 출력하고 exit 2로 종료합니다. 파일 내용이나 원시 예외 메시지는 출력하지 않습니다. 입력만 준비한 첫 검증의 정상 출력은 `total=15`, `eligible_count=0`, `states={"not_ready":15}`, `network_calls=0`이며, 아직 우선순위 모델을 호출한 상태가 아닙니다.
+
 입력 파일은 `schema_version: "priority-preparation-inputs-v0"`와 `cases` 배열을 가지며 각 행은 다음 구조입니다.
 
 ```json

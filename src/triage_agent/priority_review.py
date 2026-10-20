@@ -283,7 +283,13 @@ def main(argv=None):
                           'ignored_classifications': plan['ignored_classifications'],
                           'network_calls': 0, 'credentials_required': False}))
         return 0
-    except (ValueError, OSError, RecursionError) as error:
+    except FileNotFoundError as error:
+        # Show only the missing path, escaped to avoid terminal control characters.
+        path = str(Path(error.filename).absolute()) if error.filename else '(unknown path)'
+        print('Required file not found: ' + json.dumps(path, ensure_ascii=False), file=sys.stderr)
+        print('If this is shared data, copy it separately; git pull downloads code only.', file=sys.stderr)
+        return 2
+    except (ValueError, OSError, RecursionError):
         # Do not print mock content, source reports, or exception details.
         print('Priority validation failed; check input, classification and output paths.', file=sys.stderr)
         return 2
