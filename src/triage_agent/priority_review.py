@@ -1,4 +1,4 @@
-"""Offline priority planning and mock-only execution. No live provider is wired."""
+"""Priority planning, mock responses, and explicitly enabled LM Studio execution."""
 from __future__ import annotations
 
 import argparse
@@ -118,16 +118,18 @@ def mock_request(path, plan):
     return request
 
 
-def infer_mock(request, value):
-    """Use real parsing/error handling around an injected simulated transport."""
+def infer_response(request, value, *, provider='mock'):
+    """Apply the same parsing/error rules to simulated and live responses."""
     started = time.monotonic()
-    record = {'provider': 'mock', 'model_requested': None, 'prediction': None, 'attempts': []}
+    record = {'provider': provider, 'prediction': None, 'attempts': []}
     http_status = None
     try:
         response = request(title=value['title'], body=value['body'])
         http_status = 200
         if not isinstance(response, dict):
             raise review_local.LocalError('invalid_response', 200)
+        if isinstance(response.get('model'), str):
+            record['model_returned'] = response['model']
         usage = response.get('usage')
         if isinstance(usage, dict):
             record['usage'] = {k: usage[k] for k in ('prompt_tokens', 'completion_tokens', 'total_tokens')
@@ -162,38 +164,59 @@ def infer_mock(request, value):
     return record
 
 
-def run(plan, output, request, *, mock_responses_sha256=None):
-    """Persist a mock run. Caller supplies a simulated request, never a live API."""
+def run(plan, output, request, *, mock_responses_sha256=None, mode='mock', metadata=None, instruction=None):
+    """Persist selected priority results without mixing real and simulated counts."""
+    if mode not in ('mock', 'local'):
+        raise ValueError('Unknown priority execution mode')
+    metadata = metadata or {'provider': 'mock', 'model_requested': None}
+    if mode == 'local' and (not isinstance(instruction, str) or not instruction.strip()
+                            or base.digest(instruction.encode('utf-8')) != metadata.get('prompt_sha256')):
+        raise ValueError('Live execution requires the verified prompt snapshot')
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     results = output/'results'; results.mkdir()
     base.write_json(output/'run-manifest.json', {
-        'started_at': datetime.now(timezone.utc).isoformat(), 'mode': 'mock',
-        'provider': 'mock', 'contract_version': contract.CONTRACT_VERSION,
-        'contract_status': 'provisional', 'automatic_retries': 0, 'network_calls': 0,
+        **metadata, 'started_at': datetime.now(timezone.utc).isoformat(), 'mode': mode,
+        'contract_version': contract.CONTRACT_VERSION,
+        'contract_status': 'provisional', 'automatic_retries': 0,
+        'source_total': plan.get('source_total', len(plan['rows'])),
+        'selection': plan.get('selection', 'all'),
+        'planned_calls': plan['eligible_count'] if mode == 'local' else 0,
+        **({'network_calls': 0} if mode == 'mock' else {}),
         'input_file_sha256': plan['input_file_sha256'],
         'classification_sources': plan['classification_sources'],
         'mock_responses_sha256': mock_responses_sha256,
-        'scope': 'Synthetic execution only. No accuracy or final policy claim.',
+        'scope': 'Development only. Mock and live runs remain separate; no accuracy claim.',
     })
+    if mode == 'local':
+        with (output/(metadata['prompt_version']+'.txt')).open('x', encoding='utf-8', newline='\n') as stream:
+            stream.write(instruction)
     records, stopped = [], None
     for row in plan['rows']:
         record = {'case_id': row['case_id'], 'item_id': row['item_id'],
-                  'input_sha256': row['input_sha256'], 'provider': 'mock',
+                  'input_sha256': row['input_sha256'], 'mode': mode,
+                  **{k: v for k, v in metadata.items() if k in
+                     ('provider', 'model_requested', 'prompt_version', 'prompt_sha256', 'settings')},
                   'status': row['state'], 'prediction': None, 'attempts': []}
         if row['state'] == 'eligible':
             if stopped:
                 record['status'] = 'unattempted'
             else:
-                record.update(infer_mock(request, row['input']))
+                record.update(infer_response(request, row['input'], provider=metadata['provider']))
                 if record['status'] != 'success':
                     stopped = {'case_id': row['case_id'], 'status': record['status']}
+        record['input'] = {'title_chars': len(row['input']['title']),
+                           'body_original_chars': len(row['input']['body']),
+                           'body_sent_chars': len(row['input']['body']) if record['attempts'] else 0,
+                           'truncated': False, 'request_attempted': bool(record['attempts'])}
         base.write_json(results/(row['case_id']+'.json'), record)
         records.append(record)
     states = Counter(r['status'] for r in records)
     successes = [r['prediction'] for r in records if r['status'] == 'success']
-    summary = {'mode': 'mock', 'total': len(records), 'eligible_count': plan['eligible_count'],
-               'simulated_calls': sum(len(r['attempts']) for r in records), 'network_calls': 0,
+    attempts = sum(len(r['attempts']) for r in records)
+    summary = {'mode': mode, 'total': len(records), 'eligible_count': plan['eligible_count'],
+               'simulated_calls': attempts if mode == 'mock' else 0,
+               'network_calls': attempts if mode == 'local' else 0,
                'success': len(successes), 'review': sum(p['needs_review'] for p in successes),
                'failed': sum(states[s] for s in FAILURES), 'unattempted': states['unattempted'],
                'excluded': {s: states[s] for s in ('not_applicable', 'classification_review', 'upstream_failed', 'not_ready')},
@@ -207,20 +230,54 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inputs', type=Path, required=True)
     parser.add_argument('--classifications', type=Path, help='Saved primary result directory or JSONL; never gold')
-    parser.add_argument('--mock-responses', type=Path, help='Run with simulated responses only')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--mock-responses', type=Path, help='Run with simulated responses only')
+    modes.add_argument('--execute', action='store_true', help='Actually call the local LM Studio server')
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--provider', choices=('local',), default='local')
+    parser.add_argument('--base-url', default='http://127.0.0.1:1234/v1')
+    parser.add_argument('--model', default='supergemma4-26b-uncensored-v2')
+    parser.add_argument('--max-tokens', type=int, default=4096)
+    parser.add_argument('--timeout', type=float, default=600)
+    parser.add_argument('--context-length', type=int, default=8192,
+                        help='Reported serving context; token fit still requires manual verification')
+    parser.add_argument('--smoke', action='store_true', help='Select the first eligible bug only')
     args = parser.parse_args(argv)
     try:
-        if bool(args.mock_responses) != bool(args.output):
-            raise ValueError('--mock-responses and --output must be supplied together')
+        if bool(args.mock_responses or args.execute) != bool(args.output):
+            raise ValueError('An output path and one execution mode must be supplied together')
         plan = load(args.inputs, args.classifications)
+        if args.smoke:
+            if args.mock_responses:
+                raise ValueError('Mock response ordering is fixed; smoke is for local planning or execution')
+            eligible = [r for r in plan['rows'] if r['state'] == 'eligible']
+            if not eligible:
+                raise ValueError('No eligible bug for smoke selection')
+            plan = dict(plan, source_total=len(plan['rows']), rows=eligible[:1],
+                        eligible_count=1, selection='smoke')
         if args.mock_responses:
             request = mock_request(args.mock_responses, plan)
             code = run(plan, args.output, request,
                        mock_responses_sha256=base.digest(args.mock_responses.read_bytes()))
             print(json.dumps({'mode': 'mock', 'network_calls': 0, 'output': str(args.output)}))
             return code
+        from .priority_local import LocalPriorityClient
+        client = LocalPriorityClient(base_url=args.base_url, model=args.model, max_tokens=args.max_tokens,
+                                     timeout=args.timeout, context_length=args.context_length)
+        client.validate_plan(plan)
+        if args.execute:
+            if not plan['eligible_count']:
+                raise ValueError('No saved successful bug prediction is eligible')
+            code = run(plan, args.output, client, mode='local', metadata=client.metadata(), instruction=client.prompt)
+            summary = read_json(args.output/'summary.json')
+            print(json.dumps({'mode': 'local', 'network_calls': summary['network_calls'], 'output': str(args.output)}))
+            return code
         print(json.dumps({'mode': 'validated', 'contract_status': 'provisional',
+                          'prompt_version': client.metadata()['prompt_version'],
+                          'prompt_sha256': client.metadata()['prompt_sha256'],
+                          'selection': plan.get('selection', 'all'),
+                          'source_total': plan.get('source_total', len(plan['rows'])),
+                          'planned_calls': plan['eligible_count'],
                           'total': len(plan['rows']), 'eligible_count': plan['eligible_count'],
                           'states': dict(Counter(r['state'] for r in plan['rows'])),
                           'ignored_classifications': plan['ignored_classifications'],
