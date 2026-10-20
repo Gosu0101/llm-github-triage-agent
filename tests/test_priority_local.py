@@ -1,5 +1,6 @@
 """Real priority CLI/client with the HTTP boundary replaced by recorded responses."""
 import contextlib
+import hashlib
 import importlib
 import importlib.util
 import io
@@ -47,8 +48,8 @@ class PriorityLocalTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         plan = json.loads(out)
         self.assertEqual((plan['mode'],plan['eligible_count'],plan['network_calls']),('validated',2,0))
-        self.assertEqual(plan['prompt_version'], 'priority-bug-v0.1-draft')
-        self.assertEqual(plan['prompt_sha256'], 'dd074db28862a2b19b4eee62561a0752a0e2da18bb68d690a101e37348491f69')
+        self.assertEqual(plan['prompt_version'], 'priority-bug-v0.2-draft')
+        self.assertEqual(plan['prompt_sha256'], 'd160650bb5700f16b7975a0e48eca8277abe71ecb2da953175fc265bbb861a85')
 
     def test_execute_sends_exact_input_and_schema_then_preserves_settings(self):
         output=self.root/'live-shaped'; calls=[]
@@ -82,8 +83,12 @@ class PriorityLocalTests(unittest.TestCase):
         self.assertEqual(manifest['settings']['max_tokens'],4096)
         self.assertEqual(manifest['timeout_seconds'],600)
         self.assertEqual(manifest['context_length_reported'],8192)
-        saved=(output/'priority-bug-v0.1-draft.txt').read_text(encoding='utf-8')
+        snapshot=output/'priority-bug-v0.2-draft.txt'
+        self.assertTrue(snapshot.is_file(), 'The run must preserve the selected 0.2 prompt')
+        saved=snapshot.read_text(encoding='utf-8')
         self.assertEqual(saved,calls[0][1]['messages'][0]['content'])
+        self.assertEqual(manifest['prompt_version'], 'priority-bug-v0.2-draft')
+        self.assertEqual(hashlib.sha256(saved.encode('utf-8')).hexdigest(),manifest['prompt_sha256'])
         first=json.loads((output/'results/R01.json').read_text())
         self.assertEqual(first['provider'],'lm-studio-local')
         self.assertEqual(first['prompt_sha256'],manifest['prompt_sha256'])
