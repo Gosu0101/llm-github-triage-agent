@@ -2,33 +2,53 @@
 
 `python -B -m triage_agent.priority_review`는 기본적으로 인증정보·서버 없이 입력과 대상 계획만 검증합니다. `--mock-responses`는 모의 저장, **`--execute`는 LM Studio 실제 호출**입니다. 두 실행 모드는 함께 사용할 수 없습니다. 현재 실제 연결 제공자는 로컬 LM Studio이며 Gemini용 우선순위 어댑터는 아직 없습니다.
 
-출력 계약은 `priority-bug-v0-draft`, 현재 모델에 주는 문안은 `priority-bug-v0.2-draft`입니다. bug 한정·네 필드·별도 호출에 대한 두 검토자 동의와 사용자의 G05 medium 선택을 유지합니다. 반복 지장이 본문에 직접 명시되면 medium을 줄 수 있고, 완료 가능·우회 성공을 확인된 사실로 추정하지 않습니다. 기존 분류 v2 프롬프트·클라이언트·기본값은 변경하지 않습니다.
+출력 계약은 `priority-bug-v0-draft`, 현재 모델 문안은 `priority-bug-v0.3-draft`입니다. 출력 네 필드와 스키마 키 순서(priority/rationale/needs_review/missing_information), 기존 분류 v2·클라이언트·기본값을 유지합니다.
 
-현재 문안 원문은 패키지에 포함된 `src/triage_agent/prompts/priority-bug-v0.2-draft.txt`입니다. 읽은 문안의 줄바꿈을 LF로 정규화한 UTF-8 SHA-256은 `d160650bb5700f16b7975a0e48eca8277abe71ecb2da953175fc265bbb861a85`이며 실행 전 확인하고 결과 폴더에도 같은 원문을 저장합니다. 실제 모델 품질과 high 문구·평가 지표 전체가 검증·확정된 것은 아닙니다.
+현재 문안 원문은 `src/triage_agent/prompts/priority-bug-v0.3-draft.txt`이며 LF UTF-8 SHA-256은 `dd62f2444751b9b08ac91fbe4d55e9f3dbae555131cb81a3f5b6235650cfa54b`입니다. 실행 전 확인하고 실제 결과 폴더에도 같은 원문을 저장합니다. 이 검증은 모델의 의미 준수나 정확도를 보증하지 않습니다.
 
-## 문안 0.2 변경과 재실행
+## 문안 0.3 변경과 재실행
 
-등급 선택 전에 핵심 정보의 누락·충돌을 확인하도록 순서를 바꿨습니다. 실제 큰 피해 또는 주요 작업 차단·우회 부재가 high를 뒷받침해야 하며, 정책 결함이나 화면 이상만으로 이를 추정하지 않습니다. 관찰 빈도·재시도 안내·복구 제안의 불확실성도 근거에 유지하도록 명시했습니다. 보류가 필요한 경계를 질문으로 반환하고, 직접 명시된 반복 지장은 medium으로 판단할 수 있는 기준은 그대로입니다. 특정 이슈 번호나 정답 예시는 모델 문안에 넣지 않았습니다.
+사용자가 채택한 기준에 따라, 유효한 조직 정책의 강제·반영 기능이 실제로 실패했다는 본문 근거가 있으면 구체적인 후속 피해가 없어도 medium으로 판단할 수 있습니다. 정책이라는 단어·기대 동작·검증 계획만으로 승격하지 않고, high에는 구체적인 큰 피해 또는 주요 작업 차단·실용적 우회 부재 근거를 요구합니다.
 
-이전 `priority-bug-v0.1-draft.txt`와 LF SHA-256 `dd074db28862a2b19b4eee62561a0752a0e2da18bb68d690a101e37348491f69`는 보존합니다. 출력 계약과 모델·temperature0·4096토큰·600초·재시도0은 같습니다. 이번 테스트는 문안 선택·전송·해시·저장을 검증하며 실제 모델이 보류 기준이나 한국어 지시를 따르는지는 데스크탑에서 별도로 확인해야 합니다.
+내용을 펼쳐 볼 수 있다는 관찰과 반복 조작 부담을 구분합니다. 빠진 정보가 실제로 low/medium 경계를 바꾸면 보류하며, 본문에 없는 빈도·피해·복구 효과를 더하지 않습니다. 직접 명시된 반복 지장 medium 기준은 유지합니다. 시간 숫자만의 새 medium 규칙이나 특정 사례 ID/정답 예시는 넣지 않았습니다. 키 순서 변경 효과는 별도 실험 대상으로 남깁니다.
 
-아래는 이미 준비한 입력과 기존 분류 결과를 그대로 사용하는 PowerShell 명령입니다. 브랜치를 받은 뒤 **프로젝트 루트**에서 실행합니다.
+### 이전 문안 보존
+
+- 0.1: `priority-bug-v0.1-draft.txt`, LF SHA `dd074db28862a2b19b4eee62561a0752a0e2da18bb68d690a101e37348491f69`.
+- 0.2: `priority-bug-v0.2-draft.txt`, LF SHA `d160650bb5700f16b7975a0e48eca8277abe71ecb2da953175fc265bbb861a85`.
+
+두 원문과 과거 실행을 그대로 보존합니다. 새 기준용 참조 판단으로 과거0.2 점수를 덮어쓰지 않습니다. 등급/보류 일치와 본문 근거 준수도 별도로 검토합니다. 실행기에는 사람이 매긴 정답이나 점수 계산을 추가하지 않았습니다.
+
+### 데스크탑에서 새 버전 확인
+
+이미 준비한 입력과 기존 분류 결과를 그대로 사용합니다. 아래 명령은 **현재 체크아웃이 codex/priority-review-draft 브랜치인 프로젝트 루트**에서 실행합니다. 다른 브랜치에서는 먼저 해당 브랜치의 변경을 받는 절차를 확인합니다.
 
 ```powershell
 git pull --ff-only origin codex/priority-review-draft
 python -m pip install -e .
 $classifications = 'data/llm/review/v2-local-remaining-20261014T150549Z/first-attempt-results'
-python -B -m triage_agent.priority_review --inputs 'data/llm/priority/inputs.json' --classifications $classifications
+python -B -m triage_agent.priority_review --inputs 'data/llm/priority/inputs.json' --classifications $classifications --max-tokens 5120 --timeout 600 --context-length 8192
 ```
 
-계획에 `prompt_version=priority-bug-v0.2-draft`, 위 해시, `planned_calls=5`, `network_calls=0`이 표시되는지 확인합니다. 같은 모델을 실제 context8192로 로드하고 새 문안의 입력 토큰+4096이8192 안에 맞는지 확인한 뒤 실행합니다. 문안이 길어졌으므로 이전 문안의 prompt_tokens를 그대로 쓰지 않습니다.
+계획에 `prompt_version=priority-bug-v0.3-draft`, 위 해시, 기존 분류 자료가 맞으면 `planned_calls=5`, `network_calls=0`이 표시되는지 확인합니다. 가상10건은 분류 결과가 없으면 not_ready입니다. 입력 누락·해시 불일치는 실행 전에 해결합니다.
+
+### 고정 조건의 실제 비교 실행 — 사용자가 실행할 때만
+
+이전 완료 실행과 비교할 때는 **Thinking 해제·같은 모델/양자화·GPU Offload15·실제 context8192·출력5120·timeout600초·temperature0·재시도0**을 유지합니다. 우선순위 실행기 기본 max_tokens=4096은 변경하지 않았으므로 비교에는5120을 명시합니다. CLI는 Thinking을 설정하거나 기록하지 않으므로 LM Studio에서 확인하고 화면/설정 정보를 별도로 보존합니다.
+
+문안이 바뀌었으므로 **새 실제 입력 토큰+5120이 실제 context8192 안에 들어가는지** 서버 실행 PC에서 확인합니다. 예전 문안의 prompt_tokens나 문자 수 검사로 대신하지 않습니다. 맞지 않으면 본문을 자르거나 생성 예산을 몰래 바꾸지 말고 조건을 별도 계획합니다. 아래 명령 자체는 토큰 적합성을 보장하지 않습니다.
 
 ```powershell
-$output = "data/llm/priority/local-all-v02-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-python -B -m triage_agent.priority_review --inputs 'data/llm/priority/inputs.json' --classifications $classifications --execute --output $output --max-tokens 4096 --timeout 600 --context-length 8192
+# 입력 토큰 적합성을 확인한 뒤 첫 eligible 1건
+$output = "data/llm/priority/local-smoke-v03-thinking-off-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+python -B -m triage_agent.priority_review --inputs 'data/llm/priority/inputs.json' --classifications $classifications --execute --smoke --output $output --max-tokens 5120 --timeout 600 --context-length 8192
+
+# 스모크의 버전·입력·응답·잘림/토큰 확인 후, 새로운 전체 실행 폴더
+$output = "data/llm/priority/local-all-v03-thinking-off-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+python -B -m triage_agent.priority_review --inputs 'data/llm/priority/inputs.json' --classifications $classifications --execute --output $output --max-tokens 5120 --timeout 600 --context-length 8192
 ```
 
-새 결과를 0.1 실행 폴더와 분리해 보존합니다. 형식상 success와 사람 판단 일치는 구분하고, 실행 실패·미실행을 보류로 집계하지 않습니다. 가상10건은 분류 결과가 없으면 계속 not_ready입니다. 문안 0.2의 실제 판단 개선·안정성과 전체 사람 정답은 아직 미확인입니다.
+새 결과는0.1/0.2·부분 실행과 분리하고 같은 파일을 덮어쓰거나 이어서 실행하지 않습니다. 정상 응답 success와 사람 판단 일치는 별개입니다. 유효한 보류·실행 실패·미실행·상위 제외를 나누고, 근거에 본문 밖 사실이 추가됐는지 확인합니다. 0.3의 실제 출력·보류 개선·토큰 적합성·성능은 아직 확인하지 않았습니다.
 
 ## 입력·분류 결과 준비
 
@@ -154,4 +174,4 @@ python -B -m triage_agent.priority_review --inputs 'data/llm/priority/inputs.jso
 
 LM Studio 어댑터와 공통 파싱·저장·중단 흐름을 테스트에서 모의 HTTP 경계로 검증했습니다. 원문 프로토콜은 기존 로컬 전송 함수를 사용하며, 이 함수가 시간 초과를 포함한 통신 오류를 network_error로 정규화할 수 있습니다. 잘림·JSON/스키마 오류와 구분해 기록하고 자동 재시도하지 않습니다.
 
-현재 문안 0.2의 실제 LM Studio 실행·모델 품질·토큰 적합성, Gemini 어댑터, 전체 사람 정답·평가 분모는 후속입니다. 모의 응답을 사람이 매긴 우선순위나 실제 모델 결과로 재사용하지 않습니다. G05 medium 선택과 R01/R05 보류 판단은 문안의 근거이며 실제 모델이 그렇게 출력했음을 뜻하지 않습니다.
+현재 문안 0.3의 실제 LM Studio 실행·모델 품질·토큰 적합성, Gemini 어댑터, 전체 사람 정답·평가 분모는 후속입니다. 모의 응답을 사람이 매긴 우선순위나 실제 모델 결과로 재사용하지 않습니다. 채택한 정책 기능 실패medium·명시적 반복 지장medium·핵심 정보 부족 시 보류는 문안의 기준이며 실제 모델이 그렇게 출력했음을 뜻하지 않습니다.

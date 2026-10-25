@@ -48,8 +48,8 @@ class PriorityLocalTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         plan = json.loads(out)
         self.assertEqual((plan['mode'],plan['eligible_count'],plan['network_calls']),('validated',2,0))
-        self.assertEqual(plan['prompt_version'], 'priority-bug-v0.2-draft')
-        self.assertEqual(plan['prompt_sha256'], 'd160650bb5700f16b7975a0e48eca8277abe71ecb2da953175fc265bbb861a85')
+        self.assertEqual(plan['prompt_version'], 'priority-bug-v0.3-draft')
+        self.assertEqual(plan['prompt_sha256'], 'dd62f2444751b9b08ac91fbe4d55e9f3dbae555131cb81a3f5b6235650cfa54b')
 
     def test_execute_sends_exact_input_and_schema_then_preserves_settings(self):
         output=self.root/'live-shaped'; calls=[]
@@ -65,11 +65,15 @@ class PriorityLocalTests(unittest.TestCase):
             self.assertEqual(timeout,600)
             self.assertEqual(json.loads(payload['messages'][1]['content']),self.rows[0 if i==0 else 2]['input'])
             self.assertEqual(payload['messages'][0]['role'],'system')
+            self.assertEqual(hashlib.sha256(payload['messages'][0]['content'].encode('utf-8')).hexdigest(),
+                             'dd62f2444751b9b08ac91fbe4d55e9f3dbae555131cb81a3f5b6235650cfa54b')
             self.assertEqual(payload['temperature'],0)
             self.assertEqual(payload['max_tokens'],4096)
             self.assertIs(payload['stream'],False)
             schema=payload['response_format']['json_schema']
             self.assertTrue(schema['strict'])
+            self.assertEqual(list(schema['schema']['properties']),
+                             ['priority','rationale','needs_review','missing_information'])
             self.assertEqual(set(schema['schema']['required']),
                              {'priority','rationale','needs_review','missing_information'})
         summary=json.loads((output/'summary.json').read_text())
@@ -83,11 +87,11 @@ class PriorityLocalTests(unittest.TestCase):
         self.assertEqual(manifest['settings']['max_tokens'],4096)
         self.assertEqual(manifest['timeout_seconds'],600)
         self.assertEqual(manifest['context_length_reported'],8192)
-        snapshot=output/'priority-bug-v0.2-draft.txt'
-        self.assertTrue(snapshot.is_file(), 'The run must preserve the selected 0.2 prompt')
+        snapshot=output/'priority-bug-v0.3-draft.txt'
+        self.assertTrue(snapshot.is_file(), 'The run must preserve the selected 0.3 prompt')
         saved=snapshot.read_text(encoding='utf-8')
         self.assertEqual(saved,calls[0][1]['messages'][0]['content'])
-        self.assertEqual(manifest['prompt_version'], 'priority-bug-v0.2-draft')
+        self.assertEqual(manifest['prompt_version'], 'priority-bug-v0.3-draft')
         self.assertEqual(hashlib.sha256(saved.encode('utf-8')).hexdigest(),manifest['prompt_sha256'])
         first=json.loads((output/'results/R01.json').read_text())
         self.assertEqual(first['provider'],'lm-studio-local')

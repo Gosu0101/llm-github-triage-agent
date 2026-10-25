@@ -9,8 +9,8 @@ import re
 from . import priority_contract as contract, review_bundle as base, review_local
 from .review_local import request_json
 
-PROMPT_VERSION = 'priority-bug-v0.2-draft'
-PROMPT_SHA256 = 'd160650bb5700f16b7975a0e48eca8277abe71ecb2da953175fc265bbb861a85'
+PROMPT_VERSION = 'priority-bug-v0.3-draft'
+PROMPT_SHA256 = 'dd62f2444751b9b08ac91fbe4d55e9f3dbae555131cb81a3f5b6235650cfa54b'
 
 
 class LocalPriorityClient:
