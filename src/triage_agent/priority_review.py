@@ -1,4 +1,4 @@
-"""Priority planning, mock responses, and explicitly enabled LM Studio execution."""
+"""Priority planning, mock responses, and explicitly enabled Gemini or local execution."""
 from __future__ import annotations
 
 import argparse
@@ -6,6 +6,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from http.client import HTTPException
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -132,7 +133,7 @@ def infer_response(request, value, *, provider='mock'):
             record['model_returned'] = response['model']
         usage = response.get('usage')
         if isinstance(usage, dict):
-            record['usage'] = {k: usage[k] for k in ('prompt_tokens', 'completion_tokens', 'total_tokens')
+            record['usage'] = {k: usage[k] for k in ('prompt_tokens', 'completion_tokens', 'total_tokens', 'total_thought_tokens')
                                if type(usage.get(k)) is int and usage[k] >= 0}
         choices = response.get('choices')
         if not isinstance(choices, list) or len(choices) != 1 or not isinstance(choices[0], dict):
@@ -166,10 +167,10 @@ def infer_response(request, value, *, provider='mock'):
 
 def run(plan, output, request, *, mock_responses_sha256=None, mode='mock', metadata=None, instruction=None):
     """Persist selected priority results without mixing real and simulated counts."""
-    if mode not in ('mock', 'local'):
+    if mode not in ('mock', 'local', 'gemini'):
         raise ValueError('Unknown priority execution mode')
     metadata = metadata or {'provider': 'mock', 'model_requested': None}
-    if mode == 'local' and (not isinstance(instruction, str) or not instruction.strip()
+    if mode != 'mock' and (not isinstance(instruction, str) or not instruction.strip()
                             or base.digest(instruction.encode('utf-8')) != metadata.get('prompt_sha256')):
         raise ValueError('Live execution requires the verified prompt snapshot')
     output = Path(output)
@@ -181,14 +182,14 @@ def run(plan, output, request, *, mock_responses_sha256=None, mode='mock', metad
         'contract_status': 'provisional', 'automatic_retries': 0,
         'source_total': plan.get('source_total', len(plan['rows'])),
         'selection': plan.get('selection', 'all'),
-        'planned_calls': plan['eligible_count'] if mode == 'local' else 0,
+        'planned_calls': plan['eligible_count'] if mode != 'mock' else 0,
         **({'network_calls': 0} if mode == 'mock' else {}),
         'input_file_sha256': plan['input_file_sha256'],
         'classification_sources': plan['classification_sources'],
         'mock_responses_sha256': mock_responses_sha256,
         'scope': 'Development only. Mock and live runs remain separate; no accuracy claim.',
     })
-    if mode == 'local':
+    if mode != 'mock':
         with (output/(metadata['prompt_version']+'.txt')).open('x', encoding='utf-8', newline='\n') as stream:
             stream.write(instruction)
     records, stopped = [], None
@@ -216,7 +217,7 @@ def run(plan, output, request, *, mock_responses_sha256=None, mode='mock', metad
     attempts = sum(len(r['attempts']) for r in records)
     summary = {'mode': mode, 'total': len(records), 'eligible_count': plan['eligible_count'],
                'simulated_calls': attempts if mode == 'mock' else 0,
-               'network_calls': attempts if mode == 'local' else 0,
+               'network_calls': attempts if mode != 'mock' else 0,
                'success': len(successes), 'review': sum(p['needs_review'] for p in successes),
                'failed': sum(states[s] for s in FAILURES), 'unattempted': states['unattempted'],
                'excluded': {s: states[s] for s in ('not_applicable', 'classification_review', 'upstream_failed', 'not_ready')},
@@ -232,13 +233,16 @@ def main(argv=None):
     parser.add_argument('--classifications', type=Path, help='Saved primary result directory or JSONL; never gold')
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--mock-responses', type=Path, help='Run with simulated responses only')
-    modes.add_argument('--execute', action='store_true', help='Actually call the local LM Studio server')
+    modes.add_argument('--execute', action='store_true', help='Actually call the selected provider')
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--provider', choices=('local',), default='local')
+    parser.add_argument('--provider', choices=('local', 'gemini'), default='local',
+                        help='Select explicitly; local remains the compatibility default')
+    parser.add_argument('--env-file', type=Path, help='Optional env file; Gemini execution only')
+    parser.add_argument('--interval', type=float, default=13, help='Gemini: minimum seconds between request starts')
     parser.add_argument('--base-url', default='http://127.0.0.1:1234/v1')
-    parser.add_argument('--model', default='supergemma4-26b-uncensored-v2')
+    parser.add_argument('--model', help='Default: gemini-3.8-flash or supergemma4-26b-uncensored-v2')
     parser.add_argument('--max-tokens', type=int, default=4096)
-    parser.add_argument('--timeout', type=float, default=600)
+    parser.add_argument('--timeout', type=float, help='Default: Gemini 60 seconds, local 600 seconds')
     parser.add_argument('--context-length', type=int, default=8192,
                         help='Reported serving context; token fit still requires manual verification')
     parser.add_argument('--smoke', action='store_true', help='Select the first eligible bug only')
@@ -249,7 +253,7 @@ def main(argv=None):
         plan = load(args.inputs, args.classifications)
         if args.smoke:
             if args.mock_responses:
-                raise ValueError('Mock response ordering is fixed; smoke is for local planning or execution')
+                raise ValueError('Mock response ordering is fixed; smoke is for provider planning or execution')
             eligible = [r for r in plan['rows'] if r['state'] == 'eligible']
             if not eligible:
                 raise ValueError('No eligible bug for smoke selection')
@@ -261,18 +265,36 @@ def main(argv=None):
                        mock_responses_sha256=base.digest(args.mock_responses.read_bytes()))
             print(json.dumps({'mode': 'mock', 'network_calls': 0, 'output': str(args.output)}))
             return code
-        from .priority_local import LocalPriorityClient
-        client = LocalPriorityClient(base_url=args.base_url, model=args.model, max_tokens=args.max_tokens,
-                                     timeout=args.timeout, context_length=args.context_length)
+        if args.provider == 'gemini':
+            from .priority_gemini import GeminiPriorityClient
+            client = GeminiPriorityClient(model=args.model or 'gemini-3.8-flash', max_tokens=args.max_tokens,
+                                          timeout=60 if args.timeout is None else args.timeout, interval=args.interval)
+        else:
+            from .priority_local import LocalPriorityClient
+            client = LocalPriorityClient(base_url=args.base_url, model=args.model or 'supergemma4-26b-uncensored-v2',
+                                         max_tokens=args.max_tokens, timeout=600 if args.timeout is None else args.timeout,
+                                         context_length=args.context_length)
         client.validate_plan(plan)
         if args.execute:
             if not plan['eligible_count']:
                 raise ValueError('No saved successful bug prediction is eligible')
-            code = run(plan, args.output, client, mode='local', metadata=client.metadata(), instruction=client.prompt)
+            if args.provider == 'gemini':
+                from .config import load_env_file
+                if args.env_file:
+                    if not args.env_file.is_file():
+                        raise FileNotFoundError(2, 'Missing env file', str(args.env_file))
+                    load_env_file(args.env_file)
+                key = os.environ.get('GEMINI_API_KEY', '')
+                if not key.strip():
+                    print('GEMINI_API_KEY is not configured; no API calls made.', file=sys.stderr)
+                    return 2
+                client.set_api_key(key)
+            code = run(plan, args.output, client, mode=args.provider, metadata=client.metadata(), instruction=client.prompt)
             summary = read_json(args.output/'summary.json')
-            print(json.dumps({'mode': 'local', 'network_calls': summary['network_calls'], 'output': str(args.output)}))
+            print(json.dumps({'mode': args.provider, 'network_calls': summary['network_calls'], 'output': str(args.output)}))
             return code
         print(json.dumps({'mode': 'validated', 'contract_status': 'provisional',
+                          'provider': client.metadata()['provider'], 'model_requested': client.metadata()['model_requested'],
                           'prompt_version': client.metadata()['prompt_version'],
                           'prompt_sha256': client.metadata()['prompt_sha256'],
                           'selection': plan.get('selection', 'all'),

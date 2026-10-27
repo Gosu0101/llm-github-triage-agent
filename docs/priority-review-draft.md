@@ -1,6 +1,47 @@
-# 우선순위 임시 계약·오프라인·모의 실행·LM Studio 연결
+# 우선순위 임시 계약·오프라인·모의 실행·Gemini 연결
 
-`python -B -m triage_agent.priority_review`는 기본적으로 인증정보·서버 없이 입력과 대상 계획만 검증합니다. `--mock-responses`는 모의 저장, **`--execute`는 LM Studio 실제 호출**입니다. 두 실행 모드는 함께 사용할 수 없습니다. 현재 실제 연결 제공자는 로컬 LM Studio이며 Gemini용 우선순위 어댑터는 아직 없습니다.
+`python -B -m triage_agent.priority_review`는 기본적으로 인증정보·서버 없이 입력과 대상 계획만 검증합니다. `--mock-responses`는 모의 저장, **`--execute`는 선택한 제공자 실제 호출**입니다. 두 실행 모드는 함께 사용할 수 없습니다. Gemini는 `--provider gemini`로 선택합니다. 기존 명령과의 호환을 위해 제공자를 생략하면 local입니다.
+
+## 현재 진행 경로 — 2026-10-28
+
+사용자 결정으로 **이후 로컬 실험을 필수 검증에서 제외**하고 Gemini로 우선순위0.3 검증을 이어갑니다. 로컬0.3은 오프라인 검증까지만 수행했고 추론은 미실행입니다. 기존 로컬 실행 코드·결과·아래 재현 안내는 보존 기록이며, 새로운 필수 과제가 아닙니다. 분류의 미완료 로컬24회 재실행도 필수 작업에서 제외합니다. 이 결정이 모델 전체의 부적합 판정이나 PR 종료·병합을 의미하지는 않습니다.
+
+### Gemini 준비와 오프라인 확인
+
+프로젝트 루트에서 이 변경이 포함된 `codex/priority-review-draft` 브랜치를 받은 뒤 설치합니다. 다른 브랜치에 있다면 작업 내용을 보존하고 브랜치 전환을 먼저 확인합니다. `git pull`은 실제 입력·기존 분류 결과·인증정보를 옮기지 않습니다.
+
+```powershell
+git pull --ff-only origin codex/priority-review-draft
+python -m pip install -e .
+$classifications = 'data/llm/review/v2-local-remaining-20261014T150549Z/first-attempt-results'
+python -B -m triage_agent.priority_review --provider gemini --inputs 'data/llm/priority/inputs.json' --classifications $classifications
+```
+
+확인값은 provider=google, model_requested=gemini-3.8-flash, prompt_version=priority-bug-v0.3-draft, SHA=dd62f2444751b9b08ac91fbe4d55e9f3dbae555131cb81a3f5b6235650cfa54b, planned_calls=5, network_calls=0입니다. 입력15건 중 가상10건은 not_ready이며, 겹치지 않는 분류13건이 ignored_classifications로 표시돼도 오류가 아닙니다. 오프라인에서는 `.env`나 키를 읽지 않습니다.
+
+### 실제 실행은 1건부터
+
+이 명령은 사용자가 직접 실행할 때 API를 호출합니다. 실제 키 값은 공유하지 않고 기존 `GEMINI_API_KEY` 환경변수를 사용하거나 `--env-file '.env'`로 명시합니다. 환경변수가 파일보다 우선합니다. API 키가 없으면 요청·결과 폴더 생성 전에 종료합니다.
+
+```powershell
+$output = "data/llm/priority/gemini-smoke-v03-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+python -B -m triage_agent.priority_review --provider gemini --inputs 'data/llm/priority/inputs.json' --classifications $classifications --execute --smoke --env-file '.env' --output $output
+```
+
+먼저1건의 완료·입력/문안 해시·보류/실패 구분·사용량·근거를 검토합니다. 그다음 새로운 폴더로 전체5건을 실행합니다.
+
+```powershell
+$output = "data/llm/priority/gemini-all-v03-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+python -B -m triage_agent.priority_review --provider gemini --inputs 'data/llm/priority/inputs.json' --classifications $classifications --execute --env-file '.env' --output $output
+```
+
+Gemini 기본은 **출력4096·timeout60초·temperature0·thinking_level=low·재시도0·요청 시작 간격13초**입니다. `--model`, `--max-tokens`, `--timeout`(최대60초), `--interval`(0~60초)을 기록하며 바꿀 수 있습니다. 로컬5120/600초/context8192 설정을 이 실행에 그대로 쓰지 않습니다. Gemini에는 LM Studio·GPU·로컬context 설정이 필요하지 않습니다. `thinking_level=low`를 로컬 Thinking off와 동일한 조건으로 보지 않습니다.
+
+Gemini는 기존 분류와 같은 [Interactions API](https://ai.google.dev/gemini-api/docs/interactions-overview)를 사용하며 store=false입니다. 우선순위 네 필드 스키마와 같은0.3 system 문안, 원형 title/body만 전송합니다. 분류용 클라이언트·분류 문안은 변경하지 않았습니다. Interactions 완료/텍스트를 공통 응답 검증에 연결하며, 실제 Gemini 계정/모델 권한·요금/한도·새 문안의 판단 품질은 오프라인 테스트로 확인할 수 없습니다.
+
+실제 결과의 mode=gemini, provider=google이며, 실패도 network_calls 시도 수에 포함합니다. Gemini usage는 total_input_tokens→prompt_tokens, total_output_tokens→completion_tokens로 기록하고 total_thought_tokens와 total_tokens도 별도로 보존합니다. 총합에는 생각 토큰이 포함될 수 있으므로 앞의 두 수만 더한 것으로 단정하지 않습니다. 지연에는 요청 간격 대기가 포함될 수 있습니다.0.3 원문 snapshot·manifest·건별 결과·summary를 저장하고, 첫 실행 실패 이후 나머지는 unattempted입니다. 등급/보류 일치와 원문 밖 사실 추가 여부는 따로 검토합니다.
+
+새 결과를 과거 로컬0.2 결과와 합쳐 점수를 내지 않습니다. 모델과 문안이 함께 바뀌었으므로 개선이 있어도 프롬프트만의 효과로 단정하지 않습니다.
 
 출력 계약은 `priority-bug-v0-draft`, 현재 모델 문안은 `priority-bug-v0.3-draft`입니다. 출력 네 필드와 스키마 키 순서(priority/rationale/needs_review/missing_information), 기존 분류 v2·클라이언트·기본값을 유지합니다.
 
@@ -19,7 +60,7 @@
 
 두 원문과 과거 실행을 그대로 보존합니다. 새 기준용 참조 판단으로 과거0.2 점수를 덮어쓰지 않습니다. 등급/보류 일치와 본문 근거 준수도 별도로 검토합니다. 실행기에는 사람이 매긴 정답이나 점수 계산을 추가하지 않았습니다.
 
-### 데스크탑에서 새 버전 확인
+### 이전 로컬 재현 절차: 데스크탑에서 새 버전 확인
 
 이미 준비한 입력과 기존 분류 결과를 그대로 사용합니다. 아래 명령은 **현재 체크아웃이 codex/priority-review-draft 브랜치인 프로젝트 루트**에서 실행합니다. 다른 브랜치에서는 먼저 해당 브랜치의 변경을 받는 절차를 확인합니다.
 
