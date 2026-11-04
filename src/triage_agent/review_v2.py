@@ -103,11 +103,13 @@ def run(package, output, client, repeats=0, smoke=False):
     comparison, table = base.compare(primary, package['gold'], package['baseline'], package['manifest']['reserve_ids'])
     comparison['dev'] = {k.replace('v0', 'v1'):v for k,v in comparison['dev'].items()}
     comparison['reserve'].pop('reference_question_matches', None)
+    baseline = {record['item_id']: record for record in package['baseline']}
     for row in table:
         row['v2_type'] = row.pop('v1_type')
         row['v1_type'] = row.pop('v0_type')
         row['v1_correct'] = row.pop('v0_correct')
         if row['group'] == 'reserve':
+            row['v1_type'] = (baseline[row['item_id']].get('prediction') or {}).get('type')
             row['reference_type'] = 'ambiguous; excluded'
     with (output / 'v1-v2-comparison.csv').open('x', encoding='utf-8-sig', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=list(table[0])); writer.writeheader(); writer.writerows(table)
