@@ -33,3 +33,4 @@ data/llm/
 
 # Shared frozen classification datasets (kept outside version control)
 data/classification-review/
+data/classification-review-v2/

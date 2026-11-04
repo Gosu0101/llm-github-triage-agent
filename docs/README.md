@@ -30,3 +30,6 @@
 회의록·학습 노트·수행일지·결과보고서 초안은 Notion에서 관리합니다.
 
 - [고정 dev 분류 실험 실행기](classification-review.md) — Gemini v1·LM Studio 로컬 v0/v1, 오프라인 검증·결과 보존.
+- [고정 v2 후속 분류 검토](classification-v2-review.md) — 정규 dev·예비와 별도 경계 반복 결과 보존.
+- [분류 실행 정책 합의 초안](classification-execution-policy-draft.md) — 형언·세웅 검토 반영, 후속 4096/600초 실험과 기본값 채택 구분.
+- [데스크탑 로컬 v2 4096 재실행](local-v2-4096-desktop.md) — 코드·13파일 묶음 준비, 오프라인 검증, 정규 18건+반복 6회, 결과 ZIP 전달.
