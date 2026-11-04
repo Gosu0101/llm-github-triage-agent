@@ -69,7 +69,7 @@ value = {"number": number, "title": title, "body": body,
 
 ## 상태와 저장 범위
 
-`report.json`에는 원문 본문/patch 대신 식별자·해시·기능별 status/prediction과 입력·결과 파일의 SHA를 저장합니다. 모든 원형 결과의 전체 복사본을 대신하는 것은 아니므로 원본을 함께 보존합니다. 단계의 모델·문안 식별자도 있으면 전달합니다.
+`report.json`에는 원문 본문/patch 대신 식별자·해시·기능별 status/prediction과 입력·결과 파일의 SHA를 저장합니다. 모든 원형 결과의 전체 복사본을 대신하는 것은 아니므로 원본을 함께 보존합니다. 단계의 모델·문안 식별자와 실행 구분 `mode`·`provider`도 원본에 있으면 그대로 전달합니다. 예를 들어 모의 우선순위 실행은 `features.priority.mode="mock"`, `features.priority.provider="mock"`으로 남습니다. 두 필드가 없는 과거 결과에 실행 구분을 추정해서 추가하지 않습니다.
 
 | 종합 상태 | 의미 |
 |---|---|
@@ -79,7 +79,7 @@ value = {"number": number, "title": title, "body": body,
 | needs_review | 결과가 연결됐으나 모델 보류·정보 부족 또는 원본 잘림 경고가 있음 |
 | ready | 지정한 결과가 연결됐고 기록상 보류·실패·미준비가 없음 |
 
-ready는 정답·전체 후보 검색 완료·네 기능의 실환경 통합 완료를 뜻하지 않습니다. PR에는 분류·우선순위·중복이 not_applicable이고, Issue에는 PR 요약이 not_applicable입니다. 분류 성공·비보류 bug 근거가 없으면 우선순위 성공 결과의 연결을 거부합니다. 입력/대상/후보 해시 불일치, 중복 결과, 잘못된 JSON·필드 조합도 저장 전에 거부합니다. 기존 출력 폴더는 덮어쓰지 않습니다.
+ready는 정답·전체 후보 검색 완료·네 기능의 실환경 통합 완료를 뜻하지 않습니다. 모의 결과도 연결 조건을 충족하면 ready가 될 수 있으므로 기능별 `mode`·`provider`를 함께 확인합니다. PR에는 분류·우선순위·중복이 not_applicable이고, Issue에는 PR 요약이 not_applicable입니다. 분류 성공·비보류 bug 근거가 없으면 우선순위 성공 결과의 연결을 거부합니다. 입력/대상/후보 해시 불일치, 중복 결과, 잘못된 JSON·필드 조합도 저장 전에 거부합니다. 기존 출력 폴더는 덮어쓰지 않습니다.
 
 ## 구현·검증 범위
 

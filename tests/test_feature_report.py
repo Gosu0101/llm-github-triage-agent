@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
 
-from triage_agent import feature_report, gemini
+from triage_agent import feature_report, gemini, priority_review
 
 
 def digest(value):
@@ -95,6 +95,37 @@ class FeatureReportTests(TestCase):
                 output = self.root/field
                 code, _, _ = self.cli(*options, '--output', str(output))
                 self.assertEqual(code, 2); self.assertFalse(output.exists())
+
+    def test_mock_priority_execution_provenance_survives_ready_report(self):
+        options = self.sources()
+        classifications = self.root/'classification-results'; classifications.mkdir()
+        for index, record in enumerate(json.loads((self.root/'cls.json').read_text())):
+            self.write(f'classification-results/{index}.json', record)
+        predictions = json.loads((self.root/'pri.json').read_text())
+        fixtures = self.write('mock.json', [
+            {'case_id': row['case_id'], 'input_sha256': row['input_sha256'],
+             'response': {'choices': [{'finish_reason': 'stop', 'message': {
+                 'content': json.dumps(result['prediction'])}}]}}
+            for row, result in zip(self.issues, predictions)])
+        priority_output = self.root/'mock-priority'
+        with redirect_stdout(io.StringIO()), patch.object(gemini, '_request') as http:
+            code = priority_review.main(['--inputs', str(self.root/'issues.json'),
+                '--classifications', str(classifications), '--mock-responses', str(fixtures),
+                '--output', str(priority_output)])
+        http.assert_not_called()
+        self.assertEqual(code, 0)
+        options[options.index('--priorities') + 1] = str(priority_output/'results')
+        output = self.root/'mock-report'
+        code, _, err = self.cli(*options, '--output', str(output))
+        self.assertEqual(code, 0, err)
+        report = json.loads((output/'report.json').read_text(encoding='utf-8'))
+        self.assertEqual(report['items'][0]['status'], 'ready')
+        for row, result in zip(self.issues, report['items']):
+            original = json.loads((priority_output/'results'/f"{row['case_id']}.json").read_text())
+            saved = result['features']['priority']
+            self.assertEqual((saved['mode'], saved['provider']), ('mock', 'mock'))
+            self.assertEqual(saved['prediction'], original['prediction'])
+        self.assertEqual(report['network_calls'], 0)
 
     def test_truncated_pr_input_marks_review_without_rewriting_model_output(self):
         options = self.sources(); self.prs[0]['input']['files'][0]['patch_truncated'] = True

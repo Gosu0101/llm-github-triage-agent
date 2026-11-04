@@ -85,7 +85,7 @@ def project(record, validator, extra_states=()):
             raise ValueError('Invalid successful prediction')
     elif not isinstance(status, str) or status not in FAILURES | {'unattempted', *extra_states} or prediction is not None:
         raise ValueError('Invalid feature failure or state')
-    keys = ('item_id', 'input_sha256', 'status', 'prediction', 'model_requested',
+    keys = ('item_id', 'input_sha256', 'status', 'prediction', 'mode', 'provider', 'model_requested',
             'model_returned', 'prompt_version', 'prompt_sha256')
     return {k: record[k] for k in keys if k in record}
 
