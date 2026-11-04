@@ -1,4 +1,5 @@
 import contextlib
+import csv
 import io
 import json
 from pathlib import Path
@@ -43,6 +44,39 @@ class ReviewV2Tests(unittest.TestCase):
         (self.root/'classification-v2-review.txt').write_text('Changed')
         with contextlib.redirect_stderr(io.StringIO()), patch.object(self.module,'run',side_effect=AssertionError('No execution')):
             self.assertEqual(self.module.main(['--bundle',str(self.root),'--execute']),2)
+
+    def test_comparison_keeps_reserve_baseline_without_scoring_it(self):
+        class Client:
+            settings = {}
+
+            def generate(self, **kwargs):
+                return {'status': 'success', 'prediction': {
+                    'type': 'question', 'rationale': 'Fixture', 'needs_review': False},
+                    'attempts': [{'number': 1, 'status': 'success', 'http_status': 200}]}
+
+        for provider in ('gemini', 'local'):
+            for smoke in (False, True):
+                with self.subTest(provider=provider, smoke=smoke):
+                    package = self.module.load(self.root, provider)
+                    reserve_ids = package['manifest']['reserve_ids']
+                    expected = dict(zip(reserve_ids, ('bug', 'feature-request', 'question')))
+                    for record in package['baseline']:
+                        if record['item_id'] in expected:
+                            record['prediction']['type'] = expected[record['item_id']]
+                    output = self.root / f'comparison-{provider}-{smoke}'
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        report = self.module.run(package, output, Client(), smoke=smoke)
+                    with (output / 'v1-v2-comparison.csv').open(encoding='utf-8-sig', newline='') as stream:
+                        rows = list(csv.DictReader(stream))
+                    reserve = [row for row in rows if row['group'] == 'reserve']
+                    self.assertEqual({row['item_id']: row['v1_type'] for row in reserve}, expected)
+                    self.assertTrue(all(row['v2_type'] == ('' if smoke else 'question') for row in reserve))
+                    self.assertTrue(all(row['reference_type'] == 'ambiguous; excluded' and
+                                        row['correct'] == row['v1_correct'] == '' for row in reserve))
+                    self.assertEqual(report['comparison']['dev']['total'], 15)
+                    self.assertEqual(sum(sum(row.values()) for row in
+                                         report['comparison']['dev']['confusion_matrix'].values()), 15)
+                    self.assertNotIn('reference_question_matches', report['comparison']['reserve'])
 
     def call_local_cli(self, output, *options, fail_at=None):
         from triage_agent import review_local
