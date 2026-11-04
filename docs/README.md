@@ -34,3 +34,4 @@
 - [분류 실행 정책 합의 초안](classification-execution-policy-draft.md) — 형언·세웅 검토 반영, 후속 4096/600초 실험과 기본값 채택 구분.
 - [데스크탑 로컬 v2 4096 재실행](local-v2-4096-desktop.md) — 코드·13파일 묶음 준비, 오프라인 검증, 정규 18건+반복 6회, 결과 ZIP 전달.
 - [우선순위 임시 계약·LM Studio 연결](priority-review-draft.md) — 오프라인/모의 검증, 명시적 실제 실행·1건 smoke, 성공 bug 대상 선택·결과 보존. 실제 모델 품질은 데스크탑 후속 확인.
+- [유형 분류 → 우선순위 통합 실행](triage-pipeline.md) — 한 입력의 두 단계 호출·종합 결과 저장, 기본은 인증정보 없는 검증.
