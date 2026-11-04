@@ -38,6 +38,8 @@ Issue가 있는 경우 `issues.json`을 [두 단계 실행기](triage-pipeline.m
 
 통합 실행기는 원문에 두 문안 중 더 긴 것을 더한 길이도 12,000자 이하여야 합니다. 변환 성공이 모든 모델 호출 준비 완료를 뜻하지는 않습니다. 이 추가 검증에 걸린 항목도 변환 단계에서 임의로 자르거나 제외하지 않습니다. 예를 들어 기존 9/27 수집30건의 `#333377`은 제목·본문9,805자와 우선순위 문안2,402자를 합쳐12,207자라 현재 통합 실행에서 거부됩니다. 이30건의 보고서 입력 검증과 통합 호출 거부는 구분합니다.
 
+이 경우 통합 실행기는 `reason=prompt_input_too_long`, `case_id=I333377`, `excess_chars=207`을 stderr의 진단 JSON으로 알려줍니다. 원문이나 API 키를 출력하지 않고 요청0회·결과폴더 미생성 상태로 종료합니다. 자세한 필드는 [길이 초과 안내](triage-pipeline.md#사용자가-새-실행을-선택할-때)를 따릅니다.
+
 ```powershell
 python -B -m triage_agent.triage_pipeline --inputs "$prepared/issues.json"
 python -B -m triage_agent.feature_report --issue-inputs "$prepared/issues.json"

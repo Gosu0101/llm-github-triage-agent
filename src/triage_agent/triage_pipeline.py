@@ -20,6 +20,16 @@ CLASSIFICATION_VERSION = 'classification-v2-review'
 CLASSIFICATION_SHA256 = '8c5975944151d7d8e6ed0f0b4a92fb715e15f38ffe1f63f2b2760bf0ec90b518'
 
 
+class InputLengthError(ValueError):
+    """Safe, structured preflight details; never source text or credentials."""
+
+    def __init__(self, blocked_items, max_input_chars):
+        super().__init__('Prompt plus input too long; truncation is forbidden')
+        self.report = {'mode': 'rejected', 'reason': 'prompt_input_too_long',
+                       'max_input_chars': max_input_chars, 'blocked_items': blocked_items,
+                       'network_calls': 0, 'credentials_required': False}
+
+
 def load(inputs, smoke=False, interval=13):
     """Validate both possible stages before reading credentials or creating output."""
     if not math.isfinite(interval) or not 0 <= interval <= 60:
@@ -34,10 +44,17 @@ def load(inputs, smoke=False, interval=13):
     settings = gemini.GeminiSettings(allow_review=True, max_retries=1)
     settings.validate()
     priority = GeminiPriorityClient(interval=interval)
+    prompt_size = max(len(prompt), len(priority.prompt))
+    blocked = []
     for row in plan['rows']:
         size = sum(len(v) for v in row['input'].values())
-        if size + max(len(prompt), len(priority.prompt)) > settings.max_input_chars:
-            raise ValueError('Prompt plus input too long; truncation is forbidden')
+        total = size + prompt_size
+        if total > settings.max_input_chars:
+            blocked.append({'case_id': row['case_id'], 'input_chars': size,
+                            'prompt_chars': prompt_size, 'total_chars': total,
+                            'excess_chars': total-settings.max_input_chars})
+    if blocked:
+        raise InputLengthError(blocked, settings.max_input_chars)
     plan.update(source_total=source_total, selection='smoke' if smoke else 'all',
                 classification_prompt=prompt, classification_settings=settings,
                 interval=interval)
@@ -181,6 +198,9 @@ def main(argv=None):
         print(json.dumps({'mode': 'gemini', 'network_calls': summary['network_calls'],
                           'output': str(args.output)}))
         return code
+    except InputLengthError as error:
+        print(json.dumps(error.report, ensure_ascii=False), file=sys.stderr)
+        return 2
     except (ValueError, OSError, RecursionError):
         print('Pipeline validation failed; check input, output and GEMINI_API_KEY configuration.', file=sys.stderr)
         return 2
