@@ -36,7 +36,7 @@ GitHub에 새 Issue 또는 Pull Request가 등록되면 다음 기능을 수행�
 
 ## 현재 상태
 
-프로젝트 협업 환경을 초기 구성하는 단계입니다. 구현되지 않은 기능은 완료 기능으로 간주하지 않습니다.
+OAuth 인증·데이터 수집, 고정 묶음의 유형 분류·우선순위 실행, 저장된 기능 결과의 연결과 보고서 출력을 지원합니다. 중복 탐지·PR 요약 모델 로직 연결과 GitHub Label·Comment 자동 게시, 최종 성능 평가는 후속 작업입니다. 모의 실행과 실제 모델 결과는 구분해 기록합니다.
 
 ## OAuth 로컬 검증
 
@@ -60,6 +60,10 @@ PYTHONPATH=src python3 -m triage_agent.collect_saved
 ## 고정 dev 분류 실험
 
 Gemini와 LM Studio 실행기를 프로젝트 명령으로 사용할 수 있습니다. 기본 실행은 API 호출 없는 고정 묶음 검증입니다. 설치·실행·팀 인계는 [실행기 문서](docs/classification-review.md)를 참고합니다.
+
+## 저장된 결과 보고서
+
+기존 분류·우선순위 결과를 [결과 연결 명령](docs/feature-report.md)으로 지정하면 모델 호출 없이 검증할 수 있습니다. 새 `--output` 폴더를 지정하면 `report.json`과 사람이 읽는 `report.md`를 함께 저장합니다. 보류의 추가 질문, 실행 실패, 미준비 기능, 모의 실행 표시가 보존됩니다. [두 단계 실행 안내](docs/triage-pipeline.md)도 참고하세요.
 
 ## 보안
 
