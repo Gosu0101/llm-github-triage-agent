@@ -84,6 +84,11 @@ class FeatureReportTests(TestCase):
         self.assertEqual(pr['features']['pr_summary']['prediction']['summary'], 'Changes a.py')
         self.assertNotIn('body', json.dumps(report))
         self.assertEqual(report['network_calls'], 0)
+        markdown = (output/'report.md').read_text(encoding='utf-8')
+        self.assertIn('microsoft/vscode', markdown)
+        self.assertIn('Confirmed impact', markdown)
+        self.assertIn('Changes a.py', markdown)
+        self.assertIn('실행 구분', markdown)
 
     def test_wrong_target_candidate_hash_or_unrelated_record_refuses_output(self):
         options = self.sources(); original = json.loads((self.root/'dup.json').read_text())
@@ -126,6 +131,47 @@ class FeatureReportTests(TestCase):
             self.assertEqual((saved['mode'], saved['provider']), ('mock', 'mock'))
             self.assertEqual(saved['prediction'], original['prediction'])
         self.assertEqual(report['network_calls'], 0)
+        markdown = (output/'report.md').read_text(encoding='utf-8')
+        self.assertIn('모의 실행 결과가 포함', markdown)
+        self.assertIn('mode=mock', markdown)
+        self.assertIn('provider=mock', markdown)
+
+    def test_markdown_distinguishes_abstention_failure_and_missing_work(self):
+        options = self.sources()
+        classifications = json.loads((self.root/'cls.json').read_text())
+        classifications[1].update(status='network_error', prediction=None)
+        self.write('cls.json', classifications)
+        priorities = json.loads((self.root/'pri.json').read_text())
+        priorities[0]['prediction'] = {'priority': None, 'rationale': 'Impact is unclear',
+            'needs_review': True, 'missing_information': ['Can the task be completed?']}
+        priorities[1].update(status='upstream_failed', prediction=None)
+        self.write('pri.json', priorities)
+        options = options[:options.index('--pr-summaries')]
+        output = self.root/'incomplete-report'
+        code, _, err = self.cli(*options, '--output', str(output))
+        self.assertEqual(code, 0, err)
+        markdown = (output/'report.md').read_text(encoding='utf-8')
+        for phrase in ('판정: 보류', 'Can the task be completed', '실행 실패',
+                       'network_error', '미준비', '실행 구분: 기록 없음'):
+            self.assertIn(phrase, markdown)
+        self.assertNotIn('등급: low', markdown)
+
+    def test_markdown_escapes_model_text_without_modifying_json_prediction(self):
+        options = self.sources()
+        records = json.loads((self.root/'pri.json').read_text())
+        text = '<script>alert(1)</script>\n### forged\n![x](https://example.invalid)'
+        records[0]['prediction']['rationale'] = text
+        self.write('pri.json', records)
+        output = self.root/'escaped-report'
+        code, _, err = self.cli(*options, '--output', str(output))
+        self.assertEqual(code, 0, err)
+        markdown = (output/'report.md').read_text(encoding='utf-8')
+        self.assertNotIn('<script>', markdown)
+        self.assertNotIn('\n### forged', markdown)
+        self.assertNotIn('![x](', markdown)
+        self.assertIn('&lt;script&gt;', markdown)
+        saved = json.loads((output/'report.json').read_text(encoding='utf-8'))
+        self.assertEqual(saved['items'][0]['features']['priority']['prediction']['rationale'], text)
 
     def test_truncated_pr_input_marks_review_without_rewriting_model_output(self):
         options = self.sources(); self.prs[0]['input']['files'][0]['patch_truncated'] = True

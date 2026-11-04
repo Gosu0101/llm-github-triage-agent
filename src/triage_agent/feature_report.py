@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import html
 import json
 import math
 from pathlib import Path
@@ -207,6 +208,80 @@ def build(issue_path=None, pr_path=None, classifications=None, priorities=None,
             'scope': 'Saved outputs only; ready describes joined records, not correctness or complete candidate coverage.'}
 
 
+def render_markdown(report):
+    """Render validated saved outputs without turning model text into Markdown markup."""
+    def text(value):
+        value = re.sub(r'[\x00-\x1f\x7f]', ' ', str(value))
+        return re.sub(r'([\\`*_\[\]{}()#!|])', r'\\\1', html.escape(value, quote=False))
+
+    labels = {'ready': '연결 완료', 'partial': '일부 연결', 'not_ready': '미준비',
+              'failed': '실행 실패', 'needs_review': '검토 필요', 'success': '응답 성공',
+              'not_applicable': '대상 제외', 'unattempted': '미실행',
+              'classification_review': '분류 검토 대기', 'upstream_failed': '상위 실행 실패'}
+
+    def state(value):
+        return '실행 실패 (`'+value+'`)' if value in FAILURES else labels[value]
+
+    def stage(name, record):
+        lines = ['#### '+name, '', '- 상태: '+state(record['status'])]
+        provenance = [key+'='+text(record[key]) for key in ('mode', 'provider') if key in record]
+        lines.append('- 실행 구분: '+(' · '.join(provenance) if provenance else '기록 없음'))
+        prediction = record.get('prediction')
+        if prediction:
+            for key, label in (('type', '판정'), ('priority', '등급'), ('verdict', '중복 판정')):
+                if key in prediction:
+                    lines.append('- '+('판정: 보류' if prediction[key] is None else
+                                       label+': '+text(prediction[key])))
+            if prediction.get('rationale'):
+                lines.append('- 근거: '+text(prediction['rationale']))
+            for question in prediction.get('missing_information', []):
+                lines.append('- 추가 확인: '+text(question))
+            for evidence in prediction.get('evidence', []):
+                lines.append('- 근거 자료: '+text(evidence))
+            if 'summary' in prediction:
+                lines.append('- 요약: '+text(prediction['summary']))
+                for key, label in (('key_changes', '주요 변경'), ('affected_areas', '영향 범위'),
+                                   ('tests', '테스트'), ('risks', '주의점'), ('breaking_changes', '호환성 변경')):
+                    for value in prediction[key]:
+                        lines.append('- '+label+': '+text(value))
+                if prediction['insufficient_information']:
+                    lines.append('- 추가 확인: 요약 입력 정보 부족')
+        return lines + ['']
+
+    lines = ['# 트리아지 결과', '', '저장된 결과를 정리한 보고서입니다. 보고서 생성 중 모델 요청은 0회입니다.',
+             '연결 완료는 정답이나 모든 후보 검색 완료를 보장하지 않습니다.', '']
+    records = []
+    for item in report['items']:
+        for feature in item['features'].values():
+            records.extend(feature.get('results', [feature]))
+    if any(r.get('mode') == 'mock' or r.get('provider') == 'mock' for r in records):
+        lines += ['**모의 실행 결과가 포함되어 있습니다. 기능별 실행 구분을 확인하세요.**', '']
+    lines += ['## 전체 현황', '', '| 사례 | 대상 | 연결 상태 |', '|---|---|---|']
+    for item in report['items']:
+        lines.append('| '+text(item['case_id'])+' | '+text(item['item_id'])+' | '+state(item['status'])+' |')
+    lines += ['', '## 항목별 결과', '']
+    for item in report['items']:
+        if item['status'] == 'not_ready':
+            continue
+        lines += ['### '+text(item['case_id'])+' · '+text(item['item_id']), '',
+                  '- 연결 상태: '+state(item['status'])]
+        for warning in item['warnings']:
+            lines.append('- 원본 주의: '+{'source_patch_truncated': '변경 내용 일부가 잘렸습니다.',
+                                         'source_patch_missing': '변경 내용이 없거나 누락됐습니다.'}[warning])
+        lines.append('')
+        for key, label in (('classification', '유형 분류'), ('priority', '우선순위'),
+                           ('duplicate', '중복 후보'), ('pr_summary', 'PR 요약')):
+            record = item['features'][key]
+            if record['status'] == 'not_applicable':
+                continue
+            if key == 'duplicate' and record['results']:
+                for candidate in record['results']:
+                    lines += stage(label+' · '+text(candidate['candidate_item_id']), candidate)
+            else:
+                lines += stage(label, record)
+    return '\n'.join(lines).rstrip()+'\n'
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('issue-inputs', 'pr-inputs', 'classifications', 'priorities', 'duplicates', 'pr-summaries', 'output'):
@@ -218,8 +293,10 @@ def main(argv=None):
         report = build(args.issue_inputs, args.pr_inputs, args.classifications,
                        args.priorities, args.duplicates, args.pr_summaries)
         if args.output is not None:
+            markdown = render_markdown(report)
             args.output.mkdir(parents=True, exist_ok=False)
             base.write_json(args.output/'report.json', report)
+            (args.output/'report.md').write_text(markdown, encoding='utf-8', newline='\n')
         print(json.dumps({'mode': 'saved' if args.output else 'validated',
                           'total': len(report['items']), 'states': report['states'],
                           'network_calls': 0, 'ignored_records': report['ignored_records']}))

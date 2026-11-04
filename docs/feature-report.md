@@ -12,7 +12,7 @@ $priorities = 'data/llm/priority/gemini-all-v03-20261028-011748/results'
 python -B -m triage_agent.feature_report --issue-inputs 'data/llm/priority/inputs.json' --classifications $classifications --priorities $priorities
 ```
 
-기본은 검증·상태 집계만 출력하고 파일을 만들지 않습니다. 저장하려면 새 경로를 지정합니다.
+기본은 검증·상태 집계만 출력하고 파일을 만들지 않습니다. 저장하려면 새 경로를 지정합니다. 같은 폴더에 기계 처리용 `report.json`과 사람이 읽는 `report.md`가 생성됩니다.
 
 ```powershell
 $output = "data/llm/reports/features-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
@@ -20,6 +20,10 @@ python -B -m triage_agent.feature_report --issue-inputs 'data/llm/priority/input
 ```
 
 기존15입력에서는 실제5건의 분류·우선순위만 연결되고 중복 결과가 없어 partial5, 나머지 가상10건은 not_ready입니다. 과거 전체18분류 중 선택 입력에 없는13개는 `ignored_records.classification`에 집계합니다. 새 모델 실행·새 점수로 해석하지 않습니다. 원본 결과·입력은 덮어쓰지 않습니다.
+
+`report.md`는 전체 항목의 연결 현황과 결과가 있는 항목의 분류·우선순위·추가 질문·중복 후보·PR 요약을 보여줍니다. 미준비 항목은 전체 표에 남기고, 보류와 실행 실패를 구분합니다. 모의 결과가 있으면 상단에 표시하며 기능별 원본 `mode`·`provider`도 함께 보여줍니다. 기록이 없으면 실행 구분을 추정하지 않습니다. 근거의 줄바꿈·Markdown/HTML 표시는 일반 텍스트로 처리하고 원형 prediction은 JSON에 유지합니다. 보고서에 원문 body/patch나 로컬 자료 경로를 추가하지 않습니다.
+
+Markdown은 팀 공유·시연에 활용할 수 있는 로컬 출력입니다. GitHub 댓글이나 Label을 자동으로 게시하지 않습니다. 모의 여부와 근거·누락된 결과를 확인한 뒤 공유합니다.
 
 새 통합 실행기를 사용한 경우 분류는 `<pipeline>/classification/results`, 우선순위는 `<pipeline>/priority/results`를 지정하면 됩니다. 중단된 실행의 unattempted도 그대로 보존합니다.
 
