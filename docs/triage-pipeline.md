@@ -4,7 +4,7 @@
 
 ## 설치와 호출 없는 확인
 
-`codex/triage-pipeline` 브랜치의 프로젝트 루트에서 설치합니다. 브랜치를 전환할 때는 기존 변경을 먼저 보존합니다. 기존 공유 입력 또는 최소 인계 ZIP의 `data/llm/priority/inputs.json`을 사용합니다. 코드를 받는 것만으로 공유 입력이 생기지는 않습니다.
+`main` 브랜치의 프로젝트 루트에서 설치합니다. 브랜치를 전환할 때는 기존 변경을 먼저 보존합니다. 기존 공유 입력 또는 최소 인계 ZIP의 `data/llm/priority/inputs.json`을 사용합니다. 코드를 받는 것만으로 공유 입력이 생기지는 않습니다.
 
 ```powershell
 python -m pip install -e .
@@ -29,6 +29,22 @@ python -B -m triage_agent.triage_pipeline --inputs 'data/llm/priority/inputs.jso
 - 두 단계와 분류 재시도를 통틀어 요청 시작 간격 기본13초를 적용합니다. `--interval`로0~60초를 명시할 수 있습니다.
 - 입력은 기존 `priority-preparation-inputs-v0` 형식이며 각 항목은 case_id/item_id/origin/input/input_sha256만 허용합니다. 모델에는 title/body만 전달하고 앞선 모델의 rationale·정답·원본 라벨은 넘기지 않습니다.
 - 두 프롬프트 중 더 긴 것까지 포함해 입력12000자를 검사합니다. 한도를 넘으면 사전에 전체 실행을 거부하며 본문을 자르지 않습니다. 토큰 한도 검증을 대신하는 것은 아닙니다.
+
+문안 포함 길이가 초과되면 종료코드2와 함께 stderr에 아래 형태의 진단 JSON을 출력합니다. 선택된 범위의 초과 항목을 모두 기록하며 원문·키는 출력하지 않습니다. 이 검사는 환경파일 읽기·인증정보 확인·모델 요청·결과 폴더 생성보다 먼저 실행됩니다. `--smoke`에서는 첫 입력만 선택해 검사합니다. 이 경우 API 키 설정을 바꾸어도 길이 초과는 해결되지 않습니다.
+
+```json
+{
+  "mode": "rejected",
+  "reason": "prompt_input_too_long",
+  "max_input_chars": 12000,
+  "blocked_items": [{"case_id": "I333377", "input_chars": 9805,
+    "prompt_chars": 2402, "total_chars": 12207, "excess_chars": 207}],
+  "network_calls": 0,
+  "credentials_required": false
+}
+```
+
+초과 항목은 자동으로 제외하거나 잘라서 실행하지 않습니다. `case_id`로 준비 입력의 원본을 확인하고, 실행 범위나 별도 긴 입력 처리 방식을 결정합니다. 기존 문자 제한·프롬프트·토큰 예산을 자동 변경하지 않습니다.
 
 ## 저장 결과와 연결 규칙
 

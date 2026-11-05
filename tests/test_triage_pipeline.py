@@ -67,6 +67,48 @@ class PipelineTests(TestCase):
         http.assert_not_called()
         self.assertFalse((self.root/'run').exists())
 
+    def test_prompt_length_rejection_identifies_all_blockers_before_credentials_or_output(self):
+        for index in (0, 2):
+            self.rows[index]['input']['body'] = 'private-source-marker' + 'x'*10000
+            self.rows[index]['input_sha256'] = hashlib.sha256(
+                json.dumps(self.rows[index]['input'], ensure_ascii=False).encode()).hexdigest()
+        self.inputs.write_text(json.dumps({'schema_version': 'priority-preparation-inputs-v0',
+                                          'cases': self.rows}), encoding='utf-8')
+        original = self.inputs.read_bytes(); output = self.root/'rejected-run'
+        with patch.dict(os.environ, {}, clear=True), patch.object(gemini, '_request') as http, \
+                patch('triage_agent.config.load_env_file') as env:
+            code, out, err = self.cli('--execute', '--env-file', str(self.root/'missing.env'),
+                                       '--output', str(output))
+        self.assertEqual(code, 2)
+        self.assertEqual(out, '')
+        info = json.loads(err)
+        self.assertEqual(info['reason'], 'prompt_input_too_long')
+        self.assertEqual((info['network_calls'], info['credentials_required']), (0, False))
+        self.assertEqual([r['case_id'] for r in info['blocked_items']], ['R01', 'R03'])
+        for row in info['blocked_items']:
+            self.assertEqual(row['total_chars'], row['input_chars']+row['prompt_chars'])
+            self.assertEqual(row['excess_chars'], row['total_chars']-info['max_input_chars'])
+            self.assertGreater(row['excess_chars'], 0)
+        self.assertNotIn('private-source-marker', err)
+        self.assertFalse(output.exists()); http.assert_not_called(); env.assert_not_called()
+        self.assertEqual(self.inputs.read_bytes(), original)
+
+    def test_exact_length_limit_passes_and_smoke_ignores_unselected_long_rows(self):
+        plan, client = triage_pipeline.load(self.inputs)
+        budget = plan['classification_settings'].max_input_chars
+        prompt_size = max(len(plan['classification_prompt']), len(client.prompt))
+        self.rows[0]['input']['body'] = 'x'*(budget-prompt_size-len(self.rows[0]['input']['title']))
+        self.rows[2]['input']['body'] = 'x'*10000
+        for row in self.rows:
+            row['input_sha256'] = hashlib.sha256(json.dumps(row['input'], ensure_ascii=False).encode()).hexdigest()
+        self.inputs.write_text(json.dumps({'schema_version': 'priority-preparation-inputs-v0',
+                                          'cases': self.rows}), encoding='utf-8')
+        with patch.dict(os.environ, {}, clear=True), patch.object(gemini, '_request') as http:
+            code, out, err = self.cli('--smoke')
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)['classification_calls'], 1)
+        http.assert_not_called()
+
     def test_chain_routes_bug_only_and_saves_both_stages_without_reason_leak(self):
         output, (code, out, err), http = self.execute([
             classification('question'), classification('bug'), priority(),
