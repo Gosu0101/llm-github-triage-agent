@@ -36,7 +36,7 @@ GitHub에 새 Issue 또는 Pull Request가 등록되면 다음 기능을 수행�
 
 ## 현재 상태
 
-OAuth 인증·데이터 수집, 고정 묶음의 유형 분류·우선순위 실행, 저장된 기능 결과의 연결과 보고서 출력을 지원합니다. 중복 탐지·PR 요약 모델 로직 연결과 GitHub Label·Comment 자동 게시, 최종 성능 평가는 후속 작업입니다. 모의 실행과 실제 모델 결과는 구분해 기록합니다.
+OAuth 인증·데이터 수집, 고정 묶음의 유형 분류·우선순위 실행, 저장된 PR의 Gemini·Ollama 요약 실행, 저장된 기능 결과의 연결과 보고서 출력을 지원합니다. PR 요약의 추가 표본 품질 확인, 중복 탐지 모델 로직 연결과 GitHub Label·Comment 자동 게시, 최종 성능 평가는 후속 작업입니다. 모의 실행과 실제 모델 결과는 구분해 기록합니다.
 
 ## OAuth 로컬 검증
 
@@ -62,6 +62,8 @@ PYTHONPATH=src python3 -m triage_agent.collect_saved
 Gemini와 LM Studio 실행기를 프로젝트 명령으로 사용할 수 있습니다. 기본 실행은 API 호출 없는 고정 묶음 검증입니다. 설치·실행·팀 인계는 [실행기 문서](docs/classification-review.md)를 참고합니다.
 
 ## 저장된 결과 보고서
+
+저장된 PR 입력은 [PR 요약 실행기](docs/pr-summary.md)로 검증하거나 명시적으로 Gemini 또는 로컬 Ollama에 요청할 수 있습니다. `--case-id`로 한 건을 선택하고 결과를 기존 보고서에 연결합니다. Ollama 모델은 별도로 내려받아야 하며 실제 실행 검증 상태는 해당 문서를 따릅니다.
 
 수집 JSON은 [기능 입력 준비 명령](docs/feature-inputs.md)으로 Issue·PR 입력으로 변환할 수 있습니다. 원본 라벨을 제외하고 입력 해시·PR 잘림 표시를 보존합니다. 기본은 파일·네트워크 호출 없는 검증입니다.
 
