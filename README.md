@@ -36,7 +36,7 @@ GitHub에 새 Issue 또는 Pull Request가 등록되면 다음 기능을 수행�
 
 ## 현재 상태
 
-OAuth 인증·데이터 수집, 고정 묶음의 유형 분류·우선순위 실행, 저장된 PR의 Gemini·Ollama 요약 실행, 저장된 기능 결과의 연결과 보고서 출력을 지원합니다. PR 요약의 추가 표본 품질 확인, 중복 탐지 모델 로직 연결과 GitHub Label·Comment 자동 게시, 최종 성능 평가는 후속 작업입니다. 모의 실행과 실제 모델 결과는 구분해 기록합니다.
+OAuth 인증·데이터 수집, 고정 묶음의 유형 분류·우선순위 실행, 저장된 PR의 Gemini·Ollama 요약, [저장된 이슈의 중복 후보 검색·Gemini 판정](docs/duplicate-detection.md), 저장된 기능 결과의 연결과 보고서 출력을 지원합니다. 추가 표본 품질 확인, GitHub Label·Comment 자동 게시와 최종 성능 평가는 후속 작업입니다. 모의 실행과 실제 모델 결과는 구분해 기록합니다.
 
 ## OAuth 로컬 검증
 

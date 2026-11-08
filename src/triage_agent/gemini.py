@@ -146,7 +146,7 @@ def _request(payload: dict[str, Any], api_key: str, timeout: float) -> dict[str,
     return data
 
 
-def _extract(data: dict[str, Any], allow_review: bool) -> tuple[str, dict | None]:
+def _decode_structured(data: dict[str, Any]) -> tuple[str, Any]:
     if data.get("status") != "completed":
         return "incomplete_response", None
     steps = data.get("steps")
@@ -172,6 +172,13 @@ def _extract(data: dict[str, Any], allow_review: bool) -> tuple[str, dict | None
         prediction = _json_loads("".join(parts))
     except (ValueError, RecursionError):
         return "invalid_json", None
+    return "success", prediction
+
+
+def _extract(data: dict[str, Any], allow_review: bool) -> tuple[str, dict | None]:
+    status, prediction = _decode_structured(data)
+    if status != "success":
+        return status, None
     if not validate_prediction(prediction, allow_review):
         return "invalid_schema", None
     return "success", prediction
