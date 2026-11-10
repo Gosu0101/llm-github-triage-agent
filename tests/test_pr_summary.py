@@ -97,6 +97,55 @@ class PRSummaryTests(TestCase):
         self.assertEqual(set(item['warnings']), {'source_patch_missing', 'source_patch_truncated'})
         self.assertFalse(item['features']['pr_summary']['prediction']['insufficient_information'])
 
+    def test_opt_in_fits_long_input_and_report_verifies_the_omissions(self):
+        self.rows[0]['input']['files'].insert(0, {
+            'filename': 'big.py', 'patch': '+' + 'x' * 12000, 'patch_truncated': False,
+        })
+        self.save()
+        original = self.inputs.read_bytes()
+        output = self.root/'reduced'
+        with patch.object(gemini, '_request', return_value=response()) as http:
+            code, _, err = self.execute(output, '--case-id', 'P12', '--fit-patches')
+        self.assertEqual(code, 0, err)
+        payload = http.call_args.args[0]
+        sent = json.loads(payload['input'])
+        self.assertEqual(sent['body'], 'Saved source')
+        self.assertEqual(sent['files'], [
+            {'filename': 'big.py', 'patch': None, 'patch_truncated': True},
+            {'filename': 'a.py', 'patch': '+validate()', 'patch_truncated': False},
+        ])
+        self.assertLessEqual(len(payload['system_instruction']) + len(payload['input']), 12000)
+        result_path = output/'results/P12.json'
+        record = json.loads(result_path.read_bytes())
+        self.assertEqual(record['input_sha256'], self.rows[0]['input_sha256'])
+        self.assertEqual(record['input_coverage'], {
+            'omitted_patch_files': ['big.py'], 'model_input_sha256': review_bundle.input_hash(sent),
+        })
+        report = feature_report.build(pr_path=self.inputs, pr_summaries=output/'results')
+        self.assertEqual(report['states'], {'needs_review': 1, 'not_ready': 1})
+        self.assertEqual(report['items'][0]['warnings'], ['summary_patch_omitted'])
+        self.assertIn('big.py', feature_report.render_markdown(report))
+        self.assertEqual(original, self.inputs.read_bytes())
+        record['input_coverage']['model_input_sha256'] = '0' * 64
+        tampered = self.root/'tampered.json'
+        review_bundle.write_json(tampered, record)
+        with self.assertRaises(ValueError):
+            feature_report.build(pr_path=self.inputs, pr_summaries=tampered)
+
+    def test_fit_patches_refuses_when_no_patch_or_metadata_can_fit(self):
+        item = self.rows[0]['input']
+        item['files'][0]['patch'] = 'x' * 12000
+        for body, reason in [('short', 'no_patch_fits'), ('x' * 12000, 'pr_metadata_too_long')]:
+            item['body'] = body
+            self.save()
+            output = self.root/reason
+            with patch.object(gemini, '_request') as http:
+                code, _, err = self.execute(output, '--case-id', 'P12', '--fit-patches')
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(err)['blocked_items'][0]['reason'], reason)
+            self.assertFalse(output.exists())
+            http.assert_not_called()
+
     def test_failures_stop_without_retry_and_save_unattempted_records(self):
         broken_json = response(); broken_json['steps'][0]['content'][0]['text'] = '{'
         for index, (result, expected) in enumerate([

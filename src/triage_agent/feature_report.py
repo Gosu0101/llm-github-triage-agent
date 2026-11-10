@@ -59,6 +59,26 @@ def pr_inputs(path):
     return rows
 
 
+def pr_without_patches(value, filenames):
+    return {**value, 'files': [
+        {**file, 'patch': None, 'patch_truncated': True} if file['filename'] in filenames else file
+        for file in value['files']
+    ]}
+
+
+def pr_input_coverage(record, value):
+    coverage = record['input_coverage']
+    if not isinstance(coverage, dict) or set(coverage) != {'omitted_patch_files', 'model_input_sha256'}:
+        raise ValueError('Invalid PR input coverage')
+    omitted = coverage['omitted_patch_files']
+    available = {file['filename'] for file in value['files'] if file['patch'] is not None}
+    if not strings(omitted) or not omitted or len(set(omitted)) != len(omitted) or not set(omitted) <= available:
+        raise ValueError('Invalid omitted PR patch filenames')
+    if coverage['model_input_sha256'] != base.input_hash(pr_without_patches(value, set(omitted))):
+        raise ValueError('PR model input hash mismatch')
+    return coverage
+
+
 def read_results(path, sources):
     if path is None:
         return []
@@ -139,7 +159,10 @@ def build(issue_path=None, pr_path=None, classifications=None, priorities=None,
                 raise ValueError('Unrelated feature identity')
             if item_id in group or record['input_sha256'] != rows[item_id]['input_sha256']:
                 raise ValueError('Duplicate or mismatched feature identity')
-            group[item_id] = project(record, validator, extras)
+            result = project(record, validator, extras)
+            if stage == 'pr_summary' and 'input_coverage' in record:
+                result['input_coverage'] = pr_input_coverage(record, rows[item_id]['input'])
+            group[item_id] = result
     duplicate_groups, pairs = {}, set()
     for record in read_results(duplicates, sources):
         target, candidate = record['item_id'], record.get('candidate_item_id')
@@ -192,6 +215,8 @@ def build(issue_path=None, pr_path=None, classifications=None, priorities=None,
                 files = row['input']['files']
                 if any(f['patch_truncated'] for f in files): warnings.append('source_patch_truncated')
                 if not files or any(f['patch'] is None for f in files): warnings.append('source_patch_missing')
+                if 'input_coverage' in result:
+                    warnings.append('summary_patch_omitted')
                 review = bool(result['prediction'] and (result['prediction']['insufficient_information'] or warnings))
                 relevant = ('pr_summary',)
             states = [features[s]['status'] for s in relevant]
@@ -266,8 +291,12 @@ def render_markdown(report):
         lines += ['### '+text(item['case_id'])+' · '+text(item['item_id']), '',
                   '- 연결 상태: '+state(item['status'])]
         for warning in item['warnings']:
-            lines.append('- 원본 주의: '+{'source_patch_truncated': '변경 내용 일부가 잘렸습니다.',
-                                         'source_patch_missing': '변경 내용이 없거나 누락됐습니다.'}[warning])
+            if warning == 'summary_patch_omitted':
+                coverage = item['features']['pr_summary']['input_coverage']
+                lines.append('- 요약 입력에서 제외한 diff: '+', '.join(map(text, coverage['omitted_patch_files'])))
+            else:
+                lines.append('- 원본 주의: '+{'source_patch_truncated': '변경 내용 일부가 잘렸습니다.',
+                                             'source_patch_missing': '변경 내용이 없거나 누락됐습니다.'}[warning])
         lines.append('')
         for key, label in (('classification', '유형 분류'), ('priority', '우선순위'),
                            ('duplicate', '중복 후보'), ('pr_summary', 'PR 요약')):
