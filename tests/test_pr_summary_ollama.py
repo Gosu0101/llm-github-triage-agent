@@ -57,6 +57,23 @@ class OllamaPRTests(TestCase):
         self.assertEqual(original, self.inputs.read_bytes())
         self.assertEqual(self.cli('--execute', '--output', str(output))[0], 2)
 
+    def test_opt_in_fits_patch_budget_for_local_request(self):
+        self.rows[0]['input']['files'].append({
+            'filename': 'big.py', 'patch': 'x' * 12000, 'patch_truncated': False,
+        })
+        self.save()
+        output = self.root/'local-fit'
+        with patch.object(review_local, 'request_json', side_effect=[{'details': {}}, reply()]) as http:
+            code, _, err = self.cli('--case-id', 'P12', '--fit-patches', '--execute', '--output', str(output))
+        self.assertEqual(code, 0, err)
+        payload = http.call_args_list[1].args[1]
+        sent = json.loads(payload['messages'][1]['content'])
+        self.assertIsNone(sent['files'][1]['patch'])
+        report = feature_report.build(pr_path=self.inputs, pr_summaries=output/'results')
+        record = report['items'][0]['features']['pr_summary']
+        self.assertEqual(record['input_coverage']['omitted_patch_files'], ['big.py'])
+        self.assertEqual(report['items'][0]['status'], 'needs_review')
+
     def test_failure_is_saved_and_remaining_rows_are_unattempted(self):
         bad_json = reply(); bad_json['message']['content'] = '{'
         for i, (response, status) in enumerate([(reply(reason='length'), 'incomplete_response'),

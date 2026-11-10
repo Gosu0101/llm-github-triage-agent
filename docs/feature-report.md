@@ -69,7 +69,7 @@ value = {"number": number, "title": title, "body": body,
 
 현재 연결용 wrapper는 이 작업에서 정한 개발 인터페이스이며 팀 전원의 확정 계약으로 간주하지 않습니다. 담당자가 다른 내부 형식을 사용하면 모델 출력 자체를 바꾸지 말고 이 wrapper로 변환하면 됩니다. 모델에 없는 결과를 채우거나 등급·판정을 재작성하지 않습니다.
 
-원본 patch가 잘렸거나 없으면 외부 warnings에 source_patch_truncated/source_patch_missing을 기록합니다. 모델이 insufficient_information=false를 출력했어도 원형 prediction은 유지하고 종합 needs_review=true로 표시합니다. tests 목록이나 빈 breaking_changes만으로 테스트 실행 성공·호환성 보장을 주장하지 않습니다.
+원본 patch가 잘렸거나 없으면 외부 warnings에 source_patch_truncated/source_patch_missing을 기록합니다. 모델이 insufficient_information=false를 출력했어도 원형 prediction은 유지하고 종합 needs_review=true로 표시합니다. PR 요약 실행기가 `input_coverage`를 기록한 경우에도 원본 입력에서 제외 목록에 따른 요청을 재구성해 해시를 확인합니다. 축소로 제외한 파일은 수집 단계의 누락·잘림과 구분해 표시합니다. tests 목록이나 빈 breaking_changes만으로 테스트 실행 성공·호환성 보장을 주장하지 않습니다.
 
 ## 상태와 저장 범위
 

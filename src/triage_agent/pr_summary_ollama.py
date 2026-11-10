@@ -50,13 +50,16 @@ def run(rows, source_total, prompt, output, model, timeout, context, max_tokens)
         'source_total': source_total, 'selected_case_ids': [r['case_id'] for r in rows],
         'options': options, 'think': False, 'timeout_seconds': timeout, 'automatic_retries': 0,
         'model_details': {k: details[k] for k in ('family', 'parameter_size', 'quantization_level') if k in details},
-        'context_token_check': 'Character preflight only; inspect actual prompt_eval_count. No new text truncation in client.',
+        'context_token_check': 'Character preflight only; inspect actual prompt_eval_count.',
+        'reduced_inputs': pr_summary.reduced_inputs(rows, prompt),
         'scope': 'Local development summary; not an evaluation or cloud model run.'})
     (output/'prompt.txt').write_text(prompt, encoding='utf-8')
     states, calls, stopped = Counter(), 0, False
     for row in rows:
         record = {**metadata, **{k: row[k] for k in ('case_id', 'item_id', 'input_sha256')},
                   'status': 'unattempted', 'prediction': None, 'network_calls': 0, 'external_api_calls': 0}
+        if 'input_coverage' in row:
+            record['input_coverage'] = row['input_coverage']
         if not stopped:
             payload = {'model': model, 'messages': [
                 {'role': 'system', 'content': prompt},
@@ -87,6 +90,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inputs', type=Path, required=True)
     parser.add_argument('--case-id')
+    parser.add_argument('--fit-patches', action='store_true', help='Omit whole patches only when over the character budget')
     parser.add_argument('--model', default=DEFAULT_MODEL)
     parser.add_argument('--context', type=int, default=8192)
     parser.add_argument('--max-tokens', type=int, default=2048)
@@ -102,11 +106,12 @@ def main(argv=None):
                 or not 1024 <= args.context <= 32768 or not 1 <= args.max_tokens < args.context
                 or not math.isfinite(args.timeout) or not 0 < args.timeout <= 600):
             raise ValueError('Invalid local runtime settings')
-        rows, total, prompt, _ = pr_summary.load(args.inputs, args.case_id)
+        rows, total, prompt, _ = pr_summary.load(args.inputs, args.case_id, fit_patches=args.fit_patches)
         if not args.execute:
             print(json.dumps({'mode': 'validated', 'provider': 'ollama-local', 'selected_count': len(rows),
                 'planned_calls': len(rows), 'network_calls': 0, 'external_api_calls': 0,
-                'credentials_required': False, 'context': args.context, 'max_tokens': args.max_tokens}))
+                'credentials_required': False, 'context': args.context, 'max_tokens': args.max_tokens,
+                'reduced_inputs': pr_summary.reduced_inputs(rows, prompt)}))
             return 0
         summary = run(rows, total, prompt, args.output, args.model, args.timeout, args.context, args.max_tokens)
         print(json.dumps({**summary, 'output': str(args.output)}))

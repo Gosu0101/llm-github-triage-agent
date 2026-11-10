@@ -56,7 +56,39 @@ def extract(data):
     return 'success', prediction
 
 
-def load(path, case_id=None, *, model=DEFAULT_MODEL, interval=13):
+def fit_input_patches(value, budget):
+    """Keep PR metadata and whole patches in source order, skipping patches that do not fit."""
+    omitted = {file['filename'] for file in value['files'] if file['patch'] is not None}
+    fitted = feature_report.pr_without_patches(value, omitted)
+    size = len(json.dumps(fitted, ensure_ascii=False))
+    if size > budget:
+        return None, 'pr_metadata_too_long'
+
+    for index, file in enumerate(value['files']):
+        if file['patch'] is None:
+            continue
+        extra = (len(json.dumps(file, ensure_ascii=False))
+                 - len(json.dumps(fitted['files'][index], ensure_ascii=False)))
+        if size + extra <= budget:
+            fitted['files'][index] = file
+            omitted.remove(file['filename'])
+            size += extra
+    if not any(file['patch'] for file in fitted['files']):
+        return None, 'no_patch_fits'
+
+    coverage = {'omitted_patch_files': [file['filename'] for file in value['files']
+                                        if file['filename'] in omitted],
+                'model_input_sha256': base.input_hash(fitted)}
+    return fitted, coverage
+
+
+def reduced_inputs(rows, prompt):
+    return [{'case_id': row['case_id'], **row['input_coverage'],
+             'total_chars': len(prompt) + len(json.dumps(row['input'], ensure_ascii=False))}
+            for row in rows if 'input_coverage' in row]
+
+
+def load(path, case_id=None, *, model=DEFAULT_MODEL, interval=13, fit_patches=False):
     settings = gemini.GeminiSettings(model=model, max_output_tokens=4096, timeout_seconds=60)
     settings.validate()
     if not math.isfinite(interval) or not 0 <= interval <= 60:
@@ -80,9 +112,17 @@ def load(path, case_id=None, *, model=DEFAULT_MODEL, interval=13):
     blocked = []
     for row in rows:
         size = len(prompt) + len(json.dumps(row['input'], ensure_ascii=False))
-        if size > settings.max_input_chars:
-            blocked.append({'case_id': row['case_id'], 'total_chars': size,
-                            'excess_chars': size-settings.max_input_chars})
+        if size <= settings.max_input_chars:
+            continue
+        rejection = {'case_id': row['case_id'], 'total_chars': size,
+                     'excess_chars': size-settings.max_input_chars}
+        if fit_patches:
+            fitted, coverage = fit_input_patches(row['input'], settings.max_input_chars-len(prompt))
+            if fitted is not None:
+                row.update(input=fitted, input_coverage=coverage)
+                continue
+            rejection['reason'] = coverage
+        blocked.append(rejection)
     if blocked:
         raise LengthError({'mode': 'rejected', 'reason': 'prompt_input_too_long',
                            'max_input_chars': settings.max_input_chars, 'blocked_items': blocked,
@@ -116,12 +156,15 @@ def run(rows, total, prompt, settings, output, key, interval):
         'selected_case_ids': [r['case_id'] for r in rows], 'automatic_retries': 0,
         'max_input_chars': settings.max_input_chars, 'max_output_tokens': settings.max_output_tokens,
         'minimum_request_interval_seconds': interval, 'store': False,
+        'reduced_inputs': reduced_inputs(rows, prompt),
         'scope': 'Development PR summaries; not a quality evaluation.'})
     (output/'prompt.txt').write_text(prompt, encoding='utf-8')
     states, calls, previous_start, stopped = Counter(), 0, None, False
     for row in rows:
         record = {**metadata, **{k: row[k] for k in ('case_id', 'item_id', 'input_sha256')},
                   'status': 'unattempted', 'prediction': None, 'network_calls': 0}
+        if 'input_coverage' in row:
+            record['input_coverage'] = row['input_coverage']
         if not stopped:
             payload = {'model': settings.model,
                 'input': json.dumps(row['input'], ensure_ascii=False),
@@ -163,6 +206,7 @@ def main(argv=None):
     parser.add_argument('--case-id', help='Select exactly one case, e.g. P12')
     parser.add_argument('--model', default=DEFAULT_MODEL)
     parser.add_argument('--interval', type=float, default=13)
+    parser.add_argument('--fit-patches', action='store_true', help='Omit whole patches only when over the character budget')
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--env-file', type=Path)
@@ -173,10 +217,11 @@ def main(argv=None):
         if args.output is not None and args.output.exists():
             raise ValueError('Output already exists')
         rows, total, prompt, settings = load(args.inputs, args.case_id,
-                                           model=args.model, interval=args.interval)
+                                           model=args.model, interval=args.interval, fit_patches=args.fit_patches)
         if not args.execute:
             print(json.dumps({'mode': 'validated', 'selected_count': len(rows), 'source_total': total,
-                              'network_calls': 0, 'planned_calls': len(rows), 'credentials_required': False}))
+                              'network_calls': 0, 'planned_calls': len(rows), 'credentials_required': False,
+                              'reduced_inputs': reduced_inputs(rows, prompt)}))
             return 0
         if args.env_file:
             if not args.env_file.is_file():
