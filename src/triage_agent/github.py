@@ -48,7 +48,7 @@ def _json_request(request: Request, *, timeout: float = 15.0) -> tuple[Any, Any]
     try:
         with urlopen(request, timeout=timeout) as response:
             payload = response.read().decode("utf-8")
-            return json.loads(payload), response.headers
+            return (json.loads(payload) if payload else None), response.headers
     except HTTPError as error:
         message = f"GitHub returned HTTP {error.code}"
         try:
@@ -142,15 +142,27 @@ class GitHubClient:
     def get(self, path: str, *, params: dict[str, str | int] | None = None) -> GitHubResponse:
         """GitHub REST API GET 요청을 공통 헤더와 함께 실행한다."""
 
+        return self._request("GET", path, params=params)
+
+    def write(self, method: str, path: str, data: dict[str, Any] | None = None) -> GitHubResponse:
+        """Send a JSON mutation to the GitHub API."""
+        if method not in {"POST", "PATCH", "DELETE"}:
+            raise ValueError("Unsupported GitHub write method")
+        return self._request(method, path, data=data)
+
+    def _request(self, method, path, *, params=None, data=None):
         query = f"?{urlencode(params)}" if params else ""
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {self._access_token}",
+            "X-GitHub-Api-Version": GITHUB_API_VERSION,
+            "User-Agent": USER_AGENT,
+        }
+        if data is not None:
+            headers["Content-Type"] = "application/json"
         request = Request(
-            f"{self.api_base}{path}{query}",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self._access_token}",
-                "X-GitHub-Api-Version": GITHUB_API_VERSION,
-                "User-Agent": USER_AGENT,
-            },
+            f"{self.api_base}{path}{query}", method=method, headers=headers,
+            data=json.dumps(data).encode("utf-8") if data is not None else None,
         )
         payload, headers = _json_request(request)
         return GitHubResponse(payload, _rate_limit_headers(headers))
