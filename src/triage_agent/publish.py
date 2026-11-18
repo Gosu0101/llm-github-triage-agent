@@ -27,11 +27,15 @@ PRIORITY_LABELS = {
 }
 
 
-def make_plan(report, kind, number):
-    """Select the exact event target and turn its joined result into a post."""
+def make_plan(report, kind, number=None, *, source_item_id=None):
+    """Render a demo event result or a saved source item for preview."""
     if report.get('schema_version') != 'triage-feature-report-v0':
         raise ValueError('Expected a feature_report report.json')
-    item_id = f'{DEMO_REPOSITORY}#{number}'
+    if source_item_id is not None:
+        item_id = source_item_id
+        number = feature_report.number(item_id)
+    else:
+        item_id = f'{DEMO_REPOSITORY}#{number}'
     matches = [item for item in report['items'] if item['item_id'].casefold() == item_id.casefold()]
     if len(matches) != 1 or matches[0]['kind'] != kind:
         raise ValueError(f'Expected exactly one {kind} result for {item_id}')
@@ -58,8 +62,11 @@ def make_plan(report, kind, number):
     body = COMMENT_MARKER + '\n' + markdown.replace('@', '＠')
     if len(body.encode('utf-8')) > 65_536:
         raise ValueError('Comment exceeds the configured 64 KiB GitHub comment budget')
-    return {'target': item_id, 'kind': kind, 'number': number, 'input_sha256': item['input_sha256'],
+    plan = {'target': item_id, 'kind': kind, 'number': number, 'input_sha256': item['input_sha256'],
             'mock': mock, 'body': body, 'managed_labels': sorted(managed), 'labels': wanted}
+    if source_item_id is not None:
+        plan['source_preview'] = True
+    return plan
 
 
 def list_records(client, path):
@@ -95,6 +102,8 @@ def reconcile_labels(client, root, issue_path, issue, plan):
 
 
 def publish(client, plan, login, *, pr_head_sha=None):
+    if plan.get('source_preview'):
+        raise ValueError('A source preview cannot be published')
     if plan['mock']:
         raise ValueError('Mock results can only be previewed')
     root = f'/repos/{DEMO_REPOSITORY}'
@@ -142,12 +151,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', type=Path, required=True, help='report.json from feature_report')
     parser.add_argument('--kind', choices=('issue', 'pull_request'), required=True)
-    parser.add_argument('--number', type=int, required=True)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument('--number', type=int, help='Issue or PR number in the demo repository')
+    target.add_argument('--source-item-id', help='Saved repository#number for offline preview')
     parser.add_argument('--pr-head-sha', help='Commit analyzed in the report; required for PR publishing')
     parser.add_argument('--publish', action='store_true', help='Write to the demo repository')
     args = parser.parse_args(argv)
+    if args.publish and args.source_item_id is not None:
+        parser.error('--publish requires --number; --source-item-id is preview-only')
     try:
-        plan = make_plan(priority_review.read_json(args.report), args.kind, args.number)
+        plan = make_plan(priority_review.read_json(args.report), args.kind, args.number,
+                         source_item_id=args.source_item_id)
         if not args.publish:
             print(json.dumps({'mode': 'preview', **plan}, ensure_ascii=False))
             return 0

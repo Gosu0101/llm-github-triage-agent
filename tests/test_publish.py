@@ -1,6 +1,11 @@
+from contextlib import redirect_stderr, redirect_stdout
 from copy import deepcopy
+from io import StringIO
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import TestCase
-from unittest.mock import Mock, call
+from unittest.mock import Mock, call, patch
 
 from triage_agent import publish, review_bundle
 from triage_agent.github import GitHubResponse
@@ -28,6 +33,34 @@ class PublishTests(TestCase):
             },
         }
         self.report = {'schema_version': 'triage-feature-report-v0', 'items': [self.item]}
+
+    def test_saved_source_identity_can_be_previewed_without_github(self):
+        self.item['item_id'] = 'microsoft/vscode#338071'
+        with TemporaryDirectory() as directory:
+            report = Path(directory) / 'report.json'
+            review_bundle.write_json(report, self.report)
+            args = ['--report', str(report), '--kind', 'issue',
+                    '--source-item-id', self.item['item_id']]
+            stdout = StringIO()
+            with patch.object(publish, 'GitHubClient') as client, redirect_stdout(stdout):
+                self.assertEqual(publish.main(args), 0)
+                client.assert_not_called()
+
+        preview = json.loads(stdout.getvalue())
+        self.assertTrue(preview['source_preview'])
+        self.assertEqual(preview['target'], 'microsoft/vscode#338071')
+        self.assertEqual(set(preview['labels']), {'triage:type:bug', 'triage:priority:high'})
+        self.assertIn('Callback failure', preview['body'])
+        with self.assertRaisesRegex(ValueError, 'cannot be published'):
+            publish.publish(Mock(), preview, 'test')
+
+    def test_source_preview_flag_cannot_be_combined_with_publish(self):
+        stderr = StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as error:
+            publish.main(['--report', 'unused.json', '--kind', 'issue',
+                          '--source-item-id', 'microsoft/vscode#338071', '--publish'])
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn('preview-only', stderr.getvalue())
 
     def test_issue_creates_then_reuses_and_updates_only_its_own_comment(self):
         plan = publish.make_plan(self.report, 'issue', 8)

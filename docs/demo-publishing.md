@@ -2,7 +2,14 @@
 
 윤성의 분류·우선순위 결과, 중복 판정 결과, 또는 PR 요약을 기존 `feature_report`로 연결해 `report.json`을 만든다. 게시기는 보고서에서 이벤트 대상 한 건만 선택한다. 이슈에는 유형과 우선순위 라벨 및 분석 댓글을, 내부 브랜치 PR에는 요약 댓글을 작성한다. 요약 입력에 들어가지 못한 diff의 파일명도 댓글에 표시한다.
 
-먼저 게시 내용을 미리 확인한다. 아래 42는 형식 예시이므로 시연 대상 번호로 바꾼다. PR 미리보기에는 `--kind pull_request`를 사용한다.
+윤성이 공유한 데모 ZIP은 원본 저장소의 저장 결과가 들어 있다. ZIP을 풀고 아래처럼 이슈와 PR의 원본 식별자를 `--source-item-id`로 넘기면 라벨과 댓글을 로컬에서 미리 볼 수 있다. 명령의 `stepup-demo-handoff/` 경로는 압축을 푼 위치에 맞춘다. 출력 JSON의 `labels`에서 라벨을, `body`에서 댓글을 확인한다. 이 방식에는 GitHub 토큰이 필요 없으며 `--publish`를 같이 사용할 수 없다.
+
+```bash
+python -B -m triage_agent.publish --report stepup-demo-handoff/expected/report.json --kind issue --source-item-id 'microsoft/vscode#338071'
+python -B -m triage_agent.publish --report stepup-demo-handoff/expected/report.json --kind pull_request --source-item-id 'Gosu0101/llm-github-triage-agent#12'
+```
+
+시연 저장소의 실제 이벤트에서 만든 보고서는 `--number`로 대상을 지정해 미리 본다. 아래 42는 시연 대상 번호로 바꾼다.
 
 ```bash
 python -B -m triage_agent.publish --report path/to/report.json --kind issue --number 42
