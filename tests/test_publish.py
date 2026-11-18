@@ -72,10 +72,10 @@ class PublishTests(TestCase):
         self.assertIn('요약 입력에서 제외한 diff: big.txt', plan['body'])
         self.assertNotIn('@someone', plan['body'])
         client = Mock()
-        ref = {'repo': {'full_name': publish.DEMO_REPOSITORY}}
+        ref = {'repo': {'full_name': publish.DEMO_REPOSITORY}, 'sha': 'b' * 40}
         client.get.side_effect = [GitHubResponse({'head': ref, 'base': ref}, {}), GitHubResponse([], {})]
         client.write.return_value = GitHubResponse({'html_url': 'comment-url'}, {})
-        publish.publish(client, plan, 'github-actions[bot]')
+        publish.publish(client, plan, 'github-actions[bot]', pr_head_sha=ref['sha'])
         client.write.assert_called_once_with('POST', self.issue + '/comments', {'body': plan['body']})
 
     def test_changed_issue_and_mock_results_fail_before_write(self):
@@ -87,4 +87,12 @@ class PublishTests(TestCase):
         self.item['features']['priority']['mode'] = 'mock'
         with self.assertRaisesRegex(ValueError, 'Mock'):
             publish.publish(client, publish.make_plan(self.report, 'issue', 8), 'github-actions[bot]')
+        client.write.assert_not_called()
+
+    def test_stale_pr_head_fails_before_write(self):
+        client = Mock()
+        client.get.return_value = GitHubResponse({'head': {'sha': 'b' * 40}}, {})
+        plan = {'mock': False, 'kind': 'pull_request', 'number': 8}
+        with self.assertRaisesRegex(ValueError, 'PR head changed'):
+            publish.publish(client, plan, 'github-actions[bot]', pr_head_sha='a' * 40)
         client.write.assert_not_called()

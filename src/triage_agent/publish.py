@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from urllib.parse import quote
 
@@ -93,7 +94,7 @@ def reconcile_labels(client, root, issue_path, issue, plan):
         client.write('DELETE', f'{issue_path}/labels/{quote(name, safe="")}')
 
 
-def publish(client, plan, login):
+def publish(client, plan, login, *, pr_head_sha=None):
     if plan['mock']:
         raise ValueError('Mock results can only be previewed')
     root = f'/repos/{DEMO_REPOSITORY}'
@@ -109,7 +110,11 @@ def publish(client, plan, login):
             raise ValueError('Issue content changed since analysis. Regenerate the report')
         reconcile_labels(client, root, issue_path, issue, plan)
     else:
+        if not pr_head_sha or not re.fullmatch(r'[0-9a-fA-F]{40}', pr_head_sha):
+            raise ValueError('PR publishing requires the commit SHA used for analysis')
         pr = client.get(f'{root}/pulls/{number}').data
+        if pr['head'].get('sha', '').casefold() != pr_head_sha.casefold():
+            raise ValueError('PR head changed since analysis. Regenerate the report')
         for side in ('head', 'base'):
             repository = pr[side].get('repo') or {}
             if repository.get('full_name', '').casefold() != DEMO_REPOSITORY.casefold():
@@ -138,6 +143,7 @@ def main(argv=None):
     parser.add_argument('--report', type=Path, required=True, help='report.json from feature_report')
     parser.add_argument('--kind', choices=('issue', 'pull_request'), required=True)
     parser.add_argument('--number', type=int, required=True)
+    parser.add_argument('--pr-head-sha', help='Commit analyzed in the report; required for PR publishing')
     parser.add_argument('--publish', action='store_true', help='Write to the demo repository')
     args = parser.parse_args(argv)
     try:
@@ -151,7 +157,8 @@ def main(argv=None):
         # The Actions installation token does not support GET /user.
         login = ('github-actions[bot]' if os.environ.get('GITHUB_ACTIONS') == 'true'
                  else client.authenticated_user().data['login'])
-        print(json.dumps(publish(client, plan, login), ensure_ascii=False))
+        result = publish(client, plan, login, pr_head_sha=args.pr_head_sha)
+        print(json.dumps(result, ensure_ascii=False))
         return 0
     except (GitHubRequestError, OSError, ValueError, KeyError, TypeError) as error:
         message = str(error)
